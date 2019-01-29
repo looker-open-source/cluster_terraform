@@ -1,5 +1,5 @@
 provider azurerm {
-	version = "~> 1.17.0"
+  version = "~> 1.17.0"
   subscription_id = "d287fdd3-a75e-4f13-8e09-ab9a5345b0f3"
 }
 

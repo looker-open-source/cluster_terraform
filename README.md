@@ -1,4 +1,4 @@
-# Use terraform to automatically set up Looker clusters on cloud infrastructure like AWS and Azure
+# Use terraform to automatically set up a Looker cluster on cloud infrastructure like AWS and Azure
 
 ## Prerequisites
 1. Download an appropriate [terraform binary](https://www.terraform.io/downloads.html) and ensure `terraform` is in your $PATH

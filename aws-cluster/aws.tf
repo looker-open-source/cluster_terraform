@@ -344,7 +344,7 @@ resource "aws_instance" "looker-instance" {
       # Start Looker (but wait a while before starting additional nodes, because the first node needs to prepare the application database schema)
       "sudo systemctl daemon-reload",
       "sudo systemctl enable looker.service",
-      "if [ ${count.index} -eq 0 ]; then sudo systemctl start looker; else sleep 300 && sudo systemctl start looker; fi",
+      "if [ ${count.index} -eq 0 ]; then sudo systemctl start looker; else sleep 240 && sudo systemctl start looker; fi",
     ]
   }
 
@@ -462,9 +462,8 @@ resource "aws_elb" "looker-elb" {
 
 # Generate a random database password
 resource "random_string" "password" {
-  length = 16
-  special = true
-  override_special = "/@\" "
+  length = 20
+  special = false
 }
 
 output "Load Balanced Primary URL" {

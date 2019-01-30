@@ -5,7 +5,7 @@ provider azurerm {
 
 # Create a resource group to contain everything
 resource "azurerm_resource_group" "looker" {
-  name     = "lookerrg"
+  name     = "looker-cluster-terraform-${var.domainprefix}"
   location = "${var.location}"
 }
 
@@ -117,7 +117,7 @@ resource "azurerm_lb_rule" "looker" {
   backend_address_pool_id        = "${azurerm_lb_backend_address_pool.looker.id}"
   probe_id                       = "${azurerm_lb_probe.looker.id}"
   frontend_ip_configuration_name = "PublicIPAddress"
-# This is going to be a problem - the maximum timeout is not long enough!
+  # This can be a problem - the maximum timeout on Azure is not long enough!
   idle_timeout_in_minutes        = 30
 }
 
@@ -356,17 +356,13 @@ resource "azurerm_virtual_machine" "looker" {
       # Start Looker (but wait a while before starting additional nodes, because the first node needs to prepare the application database schema)
       "sudo systemctl daemon-reload",
       "sudo systemctl enable looker.service",
-      "if [ ${count.index} -eq 0 ]; then sudo systemctl start looker; else sleep 300 && sudo systemctl start looker; fi",
+      "if [ ${count.index} -eq 0 ]; then sudo systemctl start looker; else sleep 240 && sudo systemctl start looker; fi",
     ]
   }
 
   tags {
     environment = "looker"
   }
-}
-
-output " ***** Important Message! ***** " {
-  value = "Note that because the database initialization step takes a little while, the first Looker instance to initialize will start successfully, but the remaining instances will fail to start, because multiple database initializations cannot be run at the same time. When you have confirmed that the first instance has completed the database initialization, you must SSH into each remaining instance and run 'sudo systemctl start looker' manually."
 }
 
 output "Instances" {
@@ -470,7 +466,7 @@ resource "azurerm_virtual_machine" "lookerdb" {
       "sudo apt-get install mysql-server-5.7 -y",
       "sudo sed -i 's/bind-address/#bind-address/' /etc/mysql/mysql.conf.d/mysqld.cnf",
       "sudo /etc/init.d/mysql restart",
-      "sudo mysql -u root -e \"CREATE USER looker; SET PASSWORD FOR looker = PASSWORD('password'); CREATE DATABASE looker DEFAULT CHARACTER SET utf8 DEFAULT COLLATE utf8_general_ci; GRANT ALL ON looker.* TO looker@'%'; GRANT ALL ON looker_tmp.* TO 'looker'@'%'; FLUSH PRIVILEGES;\"",
+      "sudo mysql -u root -e \"CREATE USER looker; SET PASSWORD FOR looker = PASSWORD('${random_string.password.result}'); CREATE DATABASE looker DEFAULT CHARACTER SET utf8 DEFAULT COLLATE utf8_general_ci; GRANT ALL ON looker.* TO looker@'%'; GRANT ALL ON looker_tmp.* TO 'looker'@'%'; FLUSH PRIVILEGES;\"",
     ]
   }
 
@@ -485,7 +481,6 @@ resource "azurerm_virtual_machine" "lookerdb" {
 
 # Generate a random database password
 resource "random_string" "password" {
-  length = 16
-  special = true
-  override_special = "/@\" "
+  length = 20
+  special = false
 }

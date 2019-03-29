@@ -241,7 +241,7 @@ resource "aws_efs_mount_target" "efs-mount" {
 # Create ec2 instances for the Looker application servers
 resource "aws_instance" "looker-instance" {
   count         = "${var.instances}"
-  ami           = "ami-0bbe6b35405ecebdb" # Ubuntu 18.04 x86
+  ami           = "${var.ami_id}"
   instance_type = "${var.ec2_instance_type}"
   vpc_security_group_ids = ["${aws_security_group.ingress-all-looker.id}"]
   subnet_id = "${aws_subnet.subnet-looker.0.id}"
@@ -277,6 +277,7 @@ resource "aws_instance" "looker-instance" {
       "sudo apt-get install cifs-utils -y",
       "sudo apt-get install fonts-freefont-otf -y",
       "sudo apt-get install chromium-browser -y",
+      "sudo apt-get install openjdk-8-jdk -y",
       "sudo apt-get install nfs-common -y",
       
       # Uncomment the following line if connecting to AWS Redshift:
@@ -284,12 +285,12 @@ resource "aws_instance" "looker-instance" {
 
       # Install the Looker startup script
       "curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/systemd/looker.service -O",
+      "export CMD=\"sed -i 's/TimeoutStartSec=500/Environment=CHROMIUM_PATH=\\/usr\\/bin\\/chromium-browser/' looker.service\"",
+      "echo $CMD | bash",
       "sudo mv looker.service /etc/systemd/system/looker.service",
       "sudo chmod 664 /etc/systemd/system/looker.service",
 
       # Configure some impoortant environment settings
-      "sudo sed -i 's/TimeoutStartSec=500/TimeoutStartSec=500\nEnvironment=CHROMIUM_PATH=\\/usr\\/bin\\/chromium-browser/' /etc/systemd/system/looker.service",
-      "echo \"Environment=CHROMIUM_PATH=/usr/bin/chromium-browser\" | sudo tee -a /etc/systemd/system/looker.service",
       "echo \"net.ipv4.tcp_keepalive_time=200\" | sudo tee -a /etc/sysctl.conf",
       "echo \"net.ipv4.tcp_keepalive_intvl=200\" | sudo tee -a /etc/sysctl.conf",
       "echo \"net.ipv4.tcp_keepalive_probes=5\" | sudo tee -a /etc/sysctl.conf",
@@ -302,12 +303,6 @@ resource "aws_instance" "looker-instance" {
       "sudo mkdir /home/looker/looker",
       "sudo chown looker:looker /home/looker/looker",
       "cd /home/looker",
-
-      # Download and install the latest version of Oracle Java 1.8
-      "sudo curl -L -b \"oraclelicense=a\" https://download.oracle.com/otn-pub/java/jdk/8u201-b09/42970487e3af4f5aa5bca3f542482c60/jdk-8u201-linux-x64.tar.gz -O",
-      "sudo tar zxvf jdk-8u201-linux-x64.tar.gz",
-      "sudo chown looker:looker -R jdk1.8.0_201",
-      "sudo rm jdk-8u201-linux-x64.tar.gz",
 
       # Download and install Looker
       "cd /home/looker/looker",
@@ -330,10 +325,6 @@ resource "aws_instance" "looker-instance" {
       "echo \"database: looker\" | sudo tee -a /home/looker/looker/looker-db.yml",
       "echo \"dialect: mysql\" | sudo tee -a /home/looker/looker/looker-db.yml",
       "echo \"port: 3306\" | sudo tee -a /home/looker/looker/looker-db.yml",
-
-      # Make sure Java 1.8 is the default
-      "sudo update-alternatives --install /usr/bin/java java /home/looker/jdk1.8.0_201/bin/java 100",
-      "sudo update-alternatives --install /usr/bin/javac javac /home/looker/jdk1.8.0_201/bin/javac 100",
 
       # Mount the shared file system
       "sudo mkdir -p /mnt/lookerfiles",
@@ -466,7 +457,7 @@ resource "random_string" "password" {
   special = false
 }
 
-output "Load Balanced Primary URL" {
+output "Load Balanced Host" {
   value = "Listening on https://${aws_elb.looker-elb.dns_name} (you will need to accept the unsafe self-signed certificate)"
 }
 

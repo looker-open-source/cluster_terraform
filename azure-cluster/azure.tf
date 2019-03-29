@@ -1,6 +1,6 @@
 provider azurerm {
   version = "~> 1.17.0"
-  subscription_id = "d287fdd3-a75e-4f13-8e09-ab9a5345b0f3"
+  subscription_id = "${var.subscription_id}"
 }
 
 # Create a resource group to contain everything
@@ -294,15 +294,16 @@ resource "azurerm_virtual_machine" "looker" {
       "sudo apt-get install cifs-utils -y",
       "sudo apt-get install fonts-freefont-otf -y",
       "sudo apt-get install chromium-browser -y",
+      "sudo apt-get install openjdk-8-jdk -y",
 
       # Install the Looker startup script
       "curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/systemd/looker.service -O",
+      "export CMD=\"sed -i 's/TimeoutStartSec=500/Environment=CHROMIUM_PATH=\\/usr\\/bin\\/chromium-browser/' looker.service\"",
+      "echo $CMD | bash",
       "sudo mv looker.service /etc/systemd/system/looker.service",
       "sudo chmod 664 /etc/systemd/system/looker.service",
 
       # Configure some impoortant environment settings
-      "sudo sed -i 's/TimeoutStartSec=500/TimeoutStartSec=500\nEnvironment=CHROMIUM_PATH=\\/usr\\/bin\\/chromium-browser/' /etc/systemd/system/looker.service",
-      "echo \"Environment=CHROMIUM_PATH=/usr/bin/chromium-browser\" | sudo tee -a /etc/systemd/system/looker.service",
       "echo \"net.ipv4.tcp_keepalive_time=200\" | sudo tee -a /etc/sysctl.conf",
       "echo \"net.ipv4.tcp_keepalive_intvl=200\" | sudo tee -a /etc/sysctl.conf",
       "echo \"net.ipv4.tcp_keepalive_probes=5\" | sudo tee -a /etc/sysctl.conf",
@@ -315,12 +316,6 @@ resource "azurerm_virtual_machine" "looker" {
       "sudo mkdir /home/looker/looker",
       "sudo chown looker:looker /home/looker/looker",
       "cd /home/looker",
-
-      # Download and install the latest version of Oracle Java 1.8
-      "sudo curl -L -b \"oraclelicense=a\" https://download.oracle.com/otn-pub/java/jdk/8u201-b09/42970487e3af4f5aa5bca3f542482c60/jdk-8u201-linux-x64.tar.gz -O",
-      "sudo tar zxvf jdk-8u201-linux-x64.tar.gz",
-      "sudo chown looker:looker -R jdk1.8.0_201",
-      "sudo rm jdk-8u201-linux-x64.tar.gz",
 
       # Download and install Looker
       "cd /home/looker/looker",
@@ -345,10 +340,6 @@ resource "azurerm_virtual_machine" "looker" {
       "echo \"dialect: mysql\" | sudo tee -a /home/looker/looker/looker-db.yml",
       "echo \"port: 3306\" | sudo tee -a /home/looker/looker/looker-db.yml",
 
-      # Make sure Java 1.8 is the default
-      "sudo update-alternatives --install /usr/bin/java java /home/looker/jdk1.8.0_201/bin/java 100",
-      "sudo update-alternatives --install /usr/bin/javac javac /home/looker/jdk1.8.0_201/bin/javac 100",
-
       # Mount the shared file system
       "sudo mkdir -p /mnt/lookerfiles",
       "sudo mount -t cifs //${azurerm_storage_account.looker.name}.file.core.windows.net/${azurerm_storage_share.looker.name} /mnt/lookerfiles -o vers=3.0,username=${azurerm_storage_account.looker.name},password=${data.azurerm_storage_account.looker.primary_access_key},dir_mode=0777,file_mode=0777,serverino",
@@ -365,11 +356,7 @@ resource "azurerm_virtual_machine" "looker" {
   }
 }
 
-output "Instances" {
-  value = "Started ${var.domainprefix}-lookerapp0.${azurerm_resource_group.looker.location}.cloudapp.azure.com through ${var.domainprefix}-lookerapp${var.count - 1}.${azurerm_resource_group.looker.location}.cloudapp.azure.com"
-}
-
-output "Load Balanced Primary URL" {
+output "Load Balanced Host" {
   value = "Started ${var.domainprefix}-looker.${azurerm_resource_group.looker.location}.cloudapp.azure.com (you will need to accept the unsafe self-signed certificate)"
 }
 

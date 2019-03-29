@@ -20,7 +20,7 @@ These terraform scripts are NOT supported or warranteed by Looker in any way. Pl
     --role roles/compute.networkUser
 
     gcloud organizations add-iam-policy-binding ${TF_VAR_org_id} \
-    --member user:drewgillson@drewgillson.com \
+    --member user:you@your-email.com \
     --role roles/compute.instanceAdmin.v1
     ```
 

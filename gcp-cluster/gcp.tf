@@ -2,6 +2,7 @@ provider "google" {
   region      = "${var.region}"
 }
 
+# Some of the functionality we need isn't offered in the standard Google provider
 provider "google-beta"{
   region = "${var.region}"
 }
@@ -10,6 +11,7 @@ resource "random_id" "id" {
   byte_length = 4
 }
 
+# Create a Google Cloud Platform project
 resource "google_project" "project" {
   name = "${var.project}"
   project_id = "${var.project}-${random_id.id.hex}"
@@ -17,6 +19,7 @@ resource "google_project" "project" {
   org_id = "${var.org_id}"
 }
 
+# Enable APIs and services for our new project
 resource "google_project_services" "services" {
   project     = "${google_project.project.project_id}"
   services = [
@@ -31,6 +34,7 @@ resource "google_project_services" "services" {
   ]
 }
 
+# Create a virtual private network to contain our resources
 resource "google_compute_network" "looker" {
   project = "${google_project.project.project_id}"
   depends_on = ["google_project_services.services"]
@@ -45,6 +49,7 @@ resource "google_compute_subnetwork" "subnet" {
   ip_cidr_range = "10.0.0.0/16"
 }
 
+# Allocate a static IP address for the load balancer
 resource "google_compute_address" "looker" {
   project = "${google_project.project.project_id}"
   depends_on = ["google_compute_network.looker"]
@@ -52,7 +57,7 @@ resource "google_compute_address" "looker" {
   region = "${var.region}"
 }
 
-# Creating HTTPS health checks via API are not supported - you need to create one manually!
+# Creating an HTTPS health check for a load balancer via API is not currently supported - you need to create one manually!
 # https://github.com/hashicorp/terraform/issues/4282
 # https://cloud.google.com/load-balancing/docs/health-checks
 
@@ -66,6 +71,7 @@ resource "google_compute_address" "looker" {
 #  timeout_sec = 1
 #}
 
+# Create a target pool for the load balancer that assigns the compute instances we are going to create to the load balancer
 resource "google_compute_target_pool" "looker" {
   name = "looker-instance-pool"
   project = "${google_project.project.project_id}"
@@ -74,6 +80,7 @@ resource "google_compute_target_pool" "looker" {
   region = "${var.region}"
 }
 
+# Create a load balancer rule to route inbound traffic on the public IP port 9999 to port 9999 of an instance (for HTTP)
 resource "google_compute_forwarding_rule" "https" {
   name = "looker-https-forwarding-rule"
   project = "${google_project.project.project_id}"
@@ -83,6 +90,7 @@ resource "google_compute_forwarding_rule" "https" {
   region = "${var.region}"
 }
 
+# Create a load balancer rule to route inbound traffic on the public IP port 19999 to port 19999 of an instance (for API)
 resource "google_compute_forwarding_rule" "api" {
   name = "looker-api-forwarding-rule"
   project = "${google_project.project.project_id}"
@@ -92,6 +100,7 @@ resource "google_compute_forwarding_rule" "api" {
   region = "${var.region}"
 }
 
+# Create a firewall to block all inbound connections to any ports except 22 (SSH) and the ports we defined above
 resource "google_compute_firewall" "firewall" {
   name    = "looker-firewall"
   project = "${google_project.project.project_id}"
@@ -106,6 +115,7 @@ resource "google_compute_firewall" "firewall" {
   source_ranges = ["0.0.0.0/0"]
 }
 
+# Collect the IP addresses for our compute instances so we can set them in the authorized_networks parameter of the google_sql_database_instance resource"
 data "null_data_source" "auth_netw_mysql_allowed" {
   count = "${var.instance_count}"
 
@@ -115,6 +125,7 @@ data "null_data_source" "auth_netw_mysql_allowed" {
   }
 }
 
+# Create a Google Cloud SQL instance to host the application database
 resource "google_sql_database_instance" "looker" {
   provider      = "google-beta"
   project = "${google_project.project.project_id}"
@@ -155,6 +166,7 @@ resource "google_sql_database_instance" "looker" {
   }
 }
 
+# Create the application database in the Cloud SQL instance
 resource "google_sql_database" "backend" {
   provider      = "google-beta"
   project = "${google_project.project.project_id}"
@@ -168,6 +180,7 @@ resource "random_id" "database-password" {
   byte_length = 16
 }
 
+# Create database user
 resource "google_sql_user" "database-user" {
   provider      = "google-beta"
   project = "${google_project.project.project_id}"
@@ -177,6 +190,7 @@ resource "google_sql_user" "database-user" {
   password = "${random_id.database-password.hex}"
 }
 
+# Create a Filestore resource that compute instances can use as a shared filesystem
 resource "google_filestore_instance" "looker" {
   provider = "google-beta"
   project = "${google_project.project.project_id}"
@@ -195,6 +209,7 @@ resource "google_filestore_instance" "looker" {
   }
 }
 
+# Create the compute instances
 resource "google_compute_instance" "looker" {
   project = "${google_project.project.project_id}"
   count        = "${var.instance_count}"
@@ -225,6 +240,7 @@ resource "google_compute_instance" "looker" {
   }
 }
 
+# Run a provisioning script on the compute instances we created
 resource "null_resource" "cluster-nodes" {
   depends_on = ["google_sql_database_instance.looker","google_compute_instance.looker"]
 
@@ -255,6 +271,7 @@ resource "null_resource" "cluster-nodes" {
       "sudo apt-get install chromium-browser -y",
       "sudo apt-get install openjdk-8-jdk -y",
       "sudo apt-get install nfs-common -y",
+      "sudo apt-get install jq -y",
 
       # Install the Looker startup script
       "curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/systemd/looker.service -O",
@@ -278,8 +295,14 @@ resource "null_resource" "cluster-nodes" {
       "cd /home/looker/looker",
 
       # Download and install Looker
-      "sudo curl https://s3.amazonaws.com/download.looker.com/aeHee2HiNeekoh3uIu6hec3W/looker-${var.looker_version}-latest.jar -O",
-      "sudo mv looker-${var.looker_version}-latest.jar looker.jar",
+      "sudo curl -s -i -X POST -H 'Content-Type:application/json' -d '{\"lic\": \"${var.looker_license_key}\", \"email\": \"${var.technical_contact_email}\", \"latest\":\"latest\"}' https://apidownload.looker.com/download -o /home/looker/looker/response.txt",
+      "sudo sed -i 1,9d response.txt",
+      "sudo chmod 777 response.txt",
+      "eula=$(cat response.txt | jq -r '.eulaMessage')",
+      "if [[ \"$eula\" =~ .*EULA.* ]]; then echo \"Error! This script was unable to download the latest Looker JAR file because you have not accepted the EULA. Please go to https://download.looker.com/validate and fill in the form.\"; fi;",
+      "url=$(cat response.txt | jq -r '.url')",
+      "sudo rm response.txt",
+      "sudo curl $url -o /home/looker/looker/looker.jar",
       "sudo chown looker:looker looker.jar",
       "sudo curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/looker -O",
       "sudo chmod 0750 looker",
@@ -307,11 +330,11 @@ resource "null_resource" "cluster-nodes" {
       # Start Looker (but wait a while before starting additional nodes, because the first node needs to prepare the application database schema)
       "sudo systemctl daemon-reload",
       "sudo systemctl enable looker.service",
-      "if [ ${count.index} -eq 0 ]; then sudo systemctl start looker; else sleep 240 && sudo systemctl start looker; fi",
+      "if [ ${count.index} -eq 0 ]; then sudo systemctl start looker; else sleep 300 && sudo systemctl start looker; fi",
     ]
   } 
 }
 
 output "Load Balanced Host" {
-  value = "Listening on https://${google_compute_address.looker.address}:9999 (you will need to accept the unsafe self-signed certificate)"
+  value = "Started https://${google_compute_address.looker.address}:9999 (you will need to wait a few minutes for the instance to become available and you need to accept the unsafe self-signed certificate)"
 }

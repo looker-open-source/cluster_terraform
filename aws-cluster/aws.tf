@@ -271,6 +271,7 @@ resource "aws_instance" "looker-instance" {
     # Set up Looker!
     inline = [
 
+      "sleep 10",
       # Install required packages
       "sudo apt-get update -y",
       "sudo apt-get install libssl-dev -y",
@@ -279,6 +280,7 @@ resource "aws_instance" "looker-instance" {
       "sudo apt-get install chromium-browser -y",
       "sudo apt-get install openjdk-8-jdk -y",
       "sudo apt-get install nfs-common -y",
+      "sudo apt-get install jq -y",
       
       # Uncomment the following line if connecting to AWS Redshift:
       #"sudo ip link set dev eth0 mtu 1500",
@@ -302,12 +304,17 @@ resource "aws_instance" "looker-instance" {
       "sudo useradd -m -g looker looker",
       "sudo mkdir /home/looker/looker",
       "sudo chown looker:looker /home/looker/looker",
-      "cd /home/looker",
+      "cd /home/looker/looker",
 
       # Download and install Looker
-      "cd /home/looker/looker",
-      "sudo curl https://s3.amazonaws.com/download.looker.com/aeHee2HiNeekoh3uIu6hec3W/looker-${var.looker_version}-latest.jar -O",
-      "sudo mv looker-${var.looker_version}-latest.jar looker.jar",
+      "sudo curl -s -i -X POST -H 'Content-Type:application/json' -d '{\"lic\": \"${var.looker_license_key}\", \"email\": \"${var.technical_contact_email}\", \"latest\":\"latest\"}' https://apidownload.looker.com/download -o /home/looker/looker/response.txt",
+      "sudo sed -i 1,9d response.txt",
+      "sudo chmod 777 response.txt",
+      "eula=$(cat response.txt | jq -r '.eulaMessage')",
+      "if [[ \"$eula\" =~ .*EULA.* ]]; then echo \"Error! This script was unable to download the latest Looker JAR file because you have not accepted the EULA. Please go to https://download.looker.com/validate and fill in the form.\"; fi;",
+      "url=$(cat response.txt | jq -r '.url')",
+      "sudo rm response.txt",
+      "sudo curl $url -o /home/looker/looker/looker.jar",
       "sudo chown looker:looker looker.jar",
       "sudo curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/looker -O",
       "sudo chmod 0750 looker",
@@ -335,7 +342,7 @@ resource "aws_instance" "looker-instance" {
       # Start Looker (but wait a while before starting additional nodes, because the first node needs to prepare the application database schema)
       "sudo systemctl daemon-reload",
       "sudo systemctl enable looker.service",
-      "if [ ${count.index} -eq 0 ]; then sudo systemctl start looker; else sleep 240 && sudo systemctl start looker; fi",
+      "if [ ${count.index} -eq 0 ]; then sudo systemctl start looker; else sleep 300 && sudo systemctl start looker; fi",
     ]
   }
 
@@ -458,6 +465,6 @@ resource "random_string" "password" {
 }
 
 output "Load Balanced Host" {
-  value = "Listening on https://${aws_elb.looker-elb.dns_name} (you will need to accept the unsafe self-signed certificate)"
+  value = "Started https://${aws_elb.looker-elb.dns_name} (you will need to wait a few minutes for the instance to become available and you need to accept the unsafe self-signed certificate)"
 }
 

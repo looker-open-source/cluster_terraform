@@ -3,9 +3,13 @@ provider azurerm {
   subscription_id = "${var.subscription_id}"
 }
 
+resource "random_id" "id" {
+  byte_length = 4
+}
+
 # Create a resource group to contain everything
 resource "azurerm_resource_group" "looker" {
-  name     = "looker-cluster-terraform-${var.domainprefix}"
+  name     = "cluster-${random_id.id.hex}"
   location = "${var.location}"
 }
 
@@ -31,7 +35,7 @@ resource "azurerm_public_ip" "looker" {
   location                     = "${azurerm_resource_group.looker.location}"
   resource_group_name          = "${azurerm_resource_group.looker.name}"
   public_ip_address_allocation = "static"
-  domain_name_label            = "${var.domainprefix}-looker"
+  domain_name_label            = "cluster-${random_id.id.hex}"
   idle_timeout_in_minutes      = 30
   
   tags {
@@ -46,7 +50,7 @@ resource "azurerm_public_ip" "pubip" {
   location                     = "${azurerm_resource_group.looker.location}"
   resource_group_name          = "${azurerm_resource_group.looker.name}"
   public_ip_address_allocation = "Dynamic"
-  domain_name_label            = "${var.domainprefix}-lookerapp${count.index}"
+  domain_name_label            = "cluster-${random_id.id.hex}-${count.index}"
   idle_timeout_in_minutes      = 30
 
   tags {
@@ -137,7 +141,7 @@ resource "azurerm_lb_rule" "looker1" {
 
 # Create an Azure storage account
 resource "azurerm_storage_account" "looker" {
-  name                     = "${var.domainprefix}lookerstorage"
+  name                     = "storage${random_id.id.hex}"
   resource_group_name      = "${azurerm_resource_group.looker.name}"
   location                 = "${azurerm_resource_group.looker.location}"
   account_tier             = "Standard"
@@ -150,7 +154,7 @@ resource "azurerm_storage_account" "looker" {
 # Retrieve the keys to the storage account so we can use them later in the provisioning script for the app instances
 data "azurerm_storage_account" "looker" {
   depends_on           = ["azurerm_storage_account.looker"]
-  name                 = "${var.domainprefix}lookerstorage"
+  name                 = "storage${random_id.id.hex}"
   resource_group_name  = "${azurerm_resource_group.looker.name}"
 }
 
@@ -275,7 +279,7 @@ resource "azurerm_virtual_machine" "looker" {
   }
 
   connection {
-    host = "${var.domainprefix}-lookerapp${count.index}.${azurerm_resource_group.looker.location}.cloudapp.azure.com"
+    host = "cluster-${random_id.id.hex}-${count.index}.${azurerm_resource_group.looker.location}.cloudapp.azure.com"
     user = "root_looker"
     type = "ssh"
     private_key = "${file("~/.ssh/id_rsa")}"
@@ -288,6 +292,7 @@ resource "azurerm_virtual_machine" "looker" {
     # Set up Looker!
     inline = [
 
+      "sleep 10",
       # Install required packages
       "sudo apt-get update -y",
       "sudo apt-get install libssl-dev -y",
@@ -295,6 +300,7 @@ resource "azurerm_virtual_machine" "looker" {
       "sudo apt-get install fonts-freefont-otf -y",
       "sudo apt-get install chromium-browser -y",
       "sudo apt-get install openjdk-8-jdk -y",
+      "sudo apt-get install jq -y",
 
       # Install the Looker startup script
       "curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/systemd/looker.service -O",
@@ -315,12 +321,17 @@ resource "azurerm_virtual_machine" "looker" {
       "sudo useradd -m -g looker looker",
       "sudo mkdir /home/looker/looker",
       "sudo chown looker:looker /home/looker/looker",
-      "cd /home/looker",
+      "cd /home/looker/looker",
 
       # Download and install Looker
-      "cd /home/looker/looker",
-      "sudo curl https://s3.amazonaws.com/download.looker.com/aeHee2HiNeekoh3uIu6hec3W/looker-${var.looker_version}-latest.jar -O",
-      "sudo mv looker-${var.looker_version}-latest.jar looker.jar",
+      "sudo curl -s -i -X POST -H 'Content-Type:application/json' -d '{\"lic\": \"${var.looker_license_key}\", \"email\": \"${var.technical_contact_email}\", \"latest\":\"latest\"}' https://apidownload.looker.com/download -o /home/looker/looker/response.txt",
+      "sudo sed -i 1,9d response.txt",
+      "sudo chmod 777 response.txt",
+      "eula=$(cat response.txt | jq -r '.eulaMessage')",
+      "if [[ \"$eula\" =~ .*EULA.* ]]; then echo \"Error! This script was unable to download the latest Looker JAR file because you have not accepted the EULA. Please go to https://download.looker.com/validate and fill in the form.\"; fi;",
+      "url=$(cat response.txt | jq -r '.url')",
+      "sudo rm response.txt",
+      "sudo curl $url -o /home/looker/looker/looker.jar",
       "sudo chown looker:looker looker.jar",
       "sudo curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/looker -O",
       "sudo chmod 0750 looker",
@@ -333,7 +344,7 @@ resource "azurerm_virtual_machine" "looker" {
 
       # Create the database credentials file
       # TODO: the database host will need to be changed when using an azurerm_mysql_database resource
-      "echo \"host: ${var.domainprefix}-lookerdb.${azurerm_resource_group.looker.location}.cloudapp.azure.com\" | sudo tee -a /home/looker/looker/looker-db.yml",
+      "echo \"host: cluster-${random_id.id.hex}-db.${azurerm_resource_group.looker.location}.cloudapp.azure.com\" | sudo tee -a /home/looker/looker/looker-db.yml",
       "echo \"username: looker\" | sudo tee -a /home/looker/looker/looker-db.yml",
       "echo \"password: ${random_string.password.result}\" | sudo tee -a /home/looker/looker/looker-db.yml",
       "echo \"database: looker\" | sudo tee -a /home/looker/looker/looker-db.yml",
@@ -347,7 +358,7 @@ resource "azurerm_virtual_machine" "looker" {
       # Start Looker (but wait a while before starting additional nodes, because the first node needs to prepare the application database schema)
       "sudo systemctl daemon-reload",
       "sudo systemctl enable looker.service",
-      "if [ ${count.index} -eq 0 ]; then sudo systemctl start looker; else sleep 240 && sudo systemctl start looker; fi",
+      "if [ ${count.index} -eq 0 ]; then sudo systemctl start looker; else sleep 300 && sudo systemctl start looker; fi",
     ]
   }
 
@@ -357,7 +368,7 @@ resource "azurerm_virtual_machine" "looker" {
 }
 
 output "Load Balanced Host" {
-  value = "Started ${var.domainprefix}-looker.${azurerm_resource_group.looker.location}.cloudapp.azure.com (you will need to accept the unsafe self-signed certificate)"
+  value = "Started https://cluster-${random_id.id.hex}.${azurerm_resource_group.looker.location}.cloudapp.azure.com (you will need to wait a few minutes for the instance to become available and you need to accept the unsafe self-signed certificate)"
 }
 
 ####################################################################################
@@ -377,7 +388,7 @@ resource "azurerm_public_ip" "lookerdb" {
   location                     = "${azurerm_resource_group.looker.location}"
   resource_group_name          = "${azurerm_resource_group.looker.name}"
   public_ip_address_allocation = "static"
-  domain_name_label            = "${var.domainprefix}-lookerdb"
+  domain_name_label            = "cluster-${random_id.id.hex}-db"
   idle_timeout_in_minutes      = 30
   
   tags {
@@ -439,7 +450,7 @@ resource "azurerm_virtual_machine" "lookerdb" {
   }
 
   connection {
-    host = "${var.domainprefix}-lookerdb.${azurerm_resource_group.looker.location}.cloudapp.azure.com"
+    host = "cluster-${random_id.id.hex}-db.${azurerm_resource_group.looker.location}.cloudapp.azure.com"
     user = "root_looker"
     type = "ssh"
     private_key = "${file("~/.ssh/id_rsa")}"

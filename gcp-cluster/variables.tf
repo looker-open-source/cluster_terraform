@@ -1,13 +1,23 @@
+### Important! ### 
+# You must fill in the form at https://download.looker.com/validate to validate your license key and accept the EULA before running this script
+variable "looker_license_key" {
+  default = "" # your Looker license key
+}
+
+variable "technical_contact_email" {
+  default = "" # your organization's technical contact for Looker
+}
+
 variable "project" {
   default = "looker-terraform"
 }
 
 variable "billing_account" {
-  default = "" # your GCP billing account ID
+  default = "" # your GCP billing account ID, retrieve with `gcloud organizations list`
 }
 
 variable "org_id" {
-  default = "" # your GCP organization ID 
+  default = "" # your GCP organization ID, retrieve with `gcloud beta billing accounts list`
 }
 
 variable "ssh_username" {
@@ -34,10 +44,6 @@ variable "os" {
   default = "ubuntu-1804-bionic-v20190320"
 }
 
-variable "looker_version" {
-  default = "6.8"
-}
-
 variable "instance_count" {
-  default = "3"
+  default = "2"
 }

@@ -309,7 +309,7 @@ resource "azurerm_virtual_machine" "looker" {
       "sudo mv looker.service /etc/systemd/system/looker.service",
       "sudo chmod 664 /etc/systemd/system/looker.service",
 
-      # Configure some impoortant environment settings
+      # Configure some important environment settings
       "echo \"net.ipv4.tcp_keepalive_time=200\" | sudo tee -a /etc/sysctl.conf",
       "echo \"net.ipv4.tcp_keepalive_intvl=200\" | sudo tee -a /etc/sysctl.conf",
       "echo \"net.ipv4.tcp_keepalive_probes=5\" | sudo tee -a /etc/sysctl.conf",

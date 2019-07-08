@@ -28,7 +28,7 @@ These terraform scripts are NOT supported or warranteed by Looker in any way. Pl
 4. Change the directory to either `aws-cluster`, `azure-cluster`, or `gcp-cluster`
 5. Set values for a few configuration variables that are specific to you:
 
-    **(Azure)**: set your Azure subscription ID and a unique prefix in the [variables.tf](https://github.com/drewgillson/looker_cluster_terraform/blob/master/azure-cluster/variables.tf) file to prevent DNS namespace collisions
+    **(Azure)**: set your Azure subscription ID in the [variables.tf](https://github.com/drewgillson/looker_cluster_terraform/blob/master/azure-cluster/variables.tf) file to prevent DNS namespace collisions
 
     **(AWS)**: set your access key and secret key in the [variables.tf](https://github.com/drewgillson/looker_cluster_terraform/blob/master/aws-cluster/variables.tf) file
 

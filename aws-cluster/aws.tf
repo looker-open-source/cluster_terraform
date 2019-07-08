@@ -5,14 +5,15 @@ provider "aws" {
   version = "~> 1.57"
 }
 
+provider random {
+  version ="~> 2.0"
+}
+
 # Create a virtual private cloud to contain all these resources
 resource "aws_vpc" "looker-env" {
   cidr_block = "10.0.0.0/16"
   enable_dns_hostnames = true
   enable_dns_support = true
-  tags {
-    Name = "looker-env"
-  }
 }
 
 # Create elastic IP addresses for our ec2 instances
@@ -346,10 +347,6 @@ resource "aws_instance" "looker-instance" {
     ]
   }
 
-  tags {
-    Name = "looker"
-  }
-
   lifecycle {
     # Ignore changes to these arguments because of known issues with the Terraform AWS provider:
     ignore_changes = ["private_ip", "root_block_device", "ebs_block_device"]
@@ -359,9 +356,6 @@ resource "aws_instance" "looker-instance" {
 # Create an internet gateway, a routing table, and route associations
 resource "aws_internet_gateway" "looker-env-gw" {
   vpc_id = "${aws_vpc.looker-env.id}"
-  tags {
-    Name = "looker-env-gw"
-  }
 }
 
 resource "aws_route_table" "route-table-looker-env" {
@@ -369,9 +363,6 @@ resource "aws_route_table" "route-table-looker-env" {
   route {
     cidr_block = "0.0.0.0/0"
     gateway_id = "${aws_internet_gateway.looker-env-gw.id}"
-  }
-  tags {
-    Name = "looker-env-route-table"
   }
 }
 
@@ -464,7 +455,7 @@ resource "random_string" "password" {
   special = false
 }
 
-output "Load Balanced Host" {
+output "Load_Balanced_Host" {
   value = "Started https://${aws_elb.looker-elb.dns_name} (you will need to wait a few minutes for the instance to become available and you need to accept the unsafe self-signed certificate)"
 }
 

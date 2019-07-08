@@ -3,6 +3,10 @@ provider azurerm {
   subscription_id = "${var.subscription_id}"
 }
 
+provider random {
+  version ="~> 2.0"
+}
+
 resource "random_id" "id" {
   byte_length = 4
 }
@@ -34,7 +38,7 @@ resource "azurerm_public_ip" "looker" {
   name                         = "PublicIPForLB"
   location                     = "${azurerm_resource_group.looker.location}"
   resource_group_name          = "${azurerm_resource_group.looker.name}"
-  public_ip_address_allocation = "static"
+  allocation_method            = "Static"
   domain_name_label            = "cluster-${random_id.id.hex}"
   idle_timeout_in_minutes      = 30
 }
@@ -45,7 +49,7 @@ resource "azurerm_public_ip" "pubip" {
   name                         = "lookerpip-${count.index}"
   location                     = "${azurerm_resource_group.looker.location}"
   resource_group_name          = "${azurerm_resource_group.looker.name}"
-  public_ip_address_allocation = "Dynamic"
+  allocation_method            = "Static"
   domain_name_label            = "cluster-${random_id.id.hex}-${count.index}"
   idle_timeout_in_minutes      = 30
 }
@@ -344,7 +348,7 @@ resource "azurerm_virtual_machine" "looker" {
   }
 }
 
-output "Load Balanced Host" {
+output "Load_Balanced_Host" {
   value = "Started https://cluster-${random_id.id.hex}.${azurerm_resource_group.looker.location}.cloudapp.azure.com (you will need to wait a few minutes for the instance to become available and you need to accept the unsafe self-signed certificate)"
 }
 
@@ -364,7 +368,7 @@ resource "azurerm_public_ip" "lookerdb" {
   name                         = "PublicIPForDB"
   location                     = "${azurerm_resource_group.looker.location}"
   resource_group_name          = "${azurerm_resource_group.looker.name}"
-  public_ip_address_allocation = "static"
+  allocation_method            = "Static"
   domain_name_label            = "cluster-${random_id.id.hex}-db"
   idle_timeout_in_minutes      = 30
 }

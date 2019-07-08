@@ -7,6 +7,10 @@ provider "google-beta"{
   region = "${var.region}"
 }
 
+provider random {
+  version ="~> 2.0"
+}
+
 resource "random_id" "id" {
   byte_length = 4
 }
@@ -335,6 +339,6 @@ resource "null_resource" "cluster-nodes" {
   } 
 }
 
-output "Load Balanced Host" {
+output "Load_Balanced_Host" {
   value = "Started https://${google_compute_address.looker.address}:9999 (you will need to wait a few minutes for the instance to become available and you need to accept the unsafe self-signed certificate)"
 }

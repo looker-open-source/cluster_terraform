@@ -9,10 +9,10 @@ These terraform scripts are NOT supported or warranteed by Looker in any way. Pl
 1. Download an appropriate [terraform binary](https://www.terraform.io/downloads.html) and ensure `terraform` is in your $PATH
 2. Install the CLI for your cloud environment
 
-    **(Azure)**: Install the CLI if you are using Azure:
+    **(MacOS / Azure)**: Install the CLI if you are using Azure:
     `curl -L https://aka.ms/InstallAzureCli | bash`, then login from the command line by typing `az login`
 
-    **(GCP)**: Install [gcloud](https://cloud.google.com/sdk/install) if you are using GCP, then login from the command line by typing `gcloud auth application-default login` and follow these  [instructions](https://cloud.google.com/community/tutorials/managing-gcp-projects-with-terraform) to create an admin project that can provision additional projects. You will also need to
+    **(MacOS / GCP)**: Install [gcloud](https://cloud.google.com/sdk/install) if you are using GCP, then login from the command line by typing `gcloud auth application-default login` and follow these  [instructions](https://cloud.google.com/community/tutorials/managing-gcp-projects-with-terraform) to create an admin project that can provision additional projects. You will also need to
     add two more IAM bindings:
     ```
     gcloud organizations add-iam-policy-binding ${TF_VAR_org_id} \
@@ -23,6 +23,8 @@ These terraform scripts are NOT supported or warranteed by Looker in any way. Pl
     --member user:you@your-email.com \
     --role roles/compute.instanceAdmin.v1
     ```
+
+    **(Windows)**: Please follow Microsoft and Google documentation to install dependencies in your Windows environment.
 
 3. Open a shell and clone this repository into an empty directory
 4. Change the directory to either `aws-cluster`, `azure-cluster`, or `gcp-cluster`

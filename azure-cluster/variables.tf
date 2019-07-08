@@ -12,11 +12,11 @@ variable "subscription_id" {
     default = "" # your Azure subscription ID, retrieve with `az account show | grep "id"`
 }
 
-variable "count" {
+variable "node_count" {
     default = 2
 }
 variable "instance_type" {
-    default = "Standard_D1_v2"
+    default = "Standard_D3_v2"
 }
 variable "location" {
     default = "eastus"

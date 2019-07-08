@@ -1,5 +1,5 @@
 provider azurerm {
-  version = "~> 1.17.0"
+  version = "~> 1.27.0"
   subscription_id = "${var.subscription_id}"
 }
 
@@ -37,25 +37,17 @@ resource "azurerm_public_ip" "looker" {
   public_ip_address_allocation = "static"
   domain_name_label            = "cluster-${random_id.id.hex}"
   idle_timeout_in_minutes      = 30
-  
-  tags {
-    environment = "looker"
-  }
 }
 
 # Create public IPs to connect to each instance individually
 resource "azurerm_public_ip" "pubip" {
-  count                        = "${var.count}"
+  count                        = "${var.node_count}"
   name                         = "lookerpip-${count.index}"
   location                     = "${azurerm_resource_group.looker.location}"
   resource_group_name          = "${azurerm_resource_group.looker.name}"
   public_ip_address_allocation = "Dynamic"
   domain_name_label            = "cluster-${random_id.id.hex}-${count.index}"
   idle_timeout_in_minutes      = 30
-
-  tags {
-    environment = "looker"
-  }
 }
 
 # Create a load balancer
@@ -80,7 +72,7 @@ resource "azurerm_lb_backend_address_pool" "looker" {
 
 # Create a network interfaces for each of the VMs to use
 resource "azurerm_network_interface" "looker" {
-  count = "${var.count}"
+  count = "${var.node_count}"
   name                = "lookernic-${count.index}"
   location            = "${azurerm_resource_group.looker.location}"
   resource_group_name = "${azurerm_resource_group.looker.name}"
@@ -95,7 +87,7 @@ resource "azurerm_network_interface" "looker" {
 
 # Associate each network interface to the backend pool for the load balancer
 resource "azurerm_network_interface_backend_address_pool_association" "looker" {
-  count = "${var.count}"
+  count = "${var.node_count}"
   network_interface_id    = "${element(azurerm_network_interface.looker.*.id, count.index)}"
   ip_configuration_name   = "lookeripconfiguration${count.index}"
   backend_address_pool_id = "${azurerm_lb_backend_address_pool.looker.id}"
@@ -146,9 +138,6 @@ resource "azurerm_storage_account" "looker" {
   location                 = "${azurerm_resource_group.looker.location}"
   account_tier             = "Standard"
   account_replication_type = "LRS"
-  tags {
-    environment = "looker"
-  }
 }
 
 # Retrieve the keys to the storage account so we can use them later in the provisioning script for the app instances
@@ -217,10 +206,6 @@ resource "azurerm_network_security_group" "looker" {
     source_address_prefix      = "*"
     destination_address_prefix = "*"
   }
-
-  tags {
-    environment = "looker"
-  }
 }
 
 # Create an availability set - not sure if this is actually useful
@@ -228,10 +213,6 @@ resource "azurerm_availability_set" "looker" {
   name                = "lookeravailabilityset"
   location            = "${azurerm_resource_group.looker.location}"
   resource_group_name = "${azurerm_resource_group.looker.name}"
-
-  tags {
-    environment = "Production"
-  }
 }
 
 # Create the virtual machines themselves!
@@ -245,7 +226,7 @@ resource "azurerm_virtual_machine" "looker" {
   resource_group_name              = "${azurerm_resource_group.looker.name}"
   network_interface_ids            = ["${element(azurerm_network_interface.looker.*.id, count.index)}"]
   vm_size                          = "${var.instance_type}"
-  count                            = "${var.count}"
+  count                            = "${var.node_count}"
   delete_os_disk_on_termination    = true
   delete_data_disks_on_termination = true
   availability_set_id              = "${azurerm_availability_set.looker.id}"
@@ -361,10 +342,6 @@ resource "azurerm_virtual_machine" "looker" {
       "if [ ${count.index} -eq 0 ]; then sudo systemctl start looker; else sleep 300 && sudo systemctl start looker; fi",
     ]
   }
-
-  tags {
-    environment = "looker"
-  }
 }
 
 output "Load Balanced Host" {
@@ -390,10 +367,6 @@ resource "azurerm_public_ip" "lookerdb" {
   public_ip_address_allocation = "static"
   domain_name_label            = "cluster-${random_id.id.hex}-db"
   idle_timeout_in_minutes      = 30
-  
-  tags {
-    environment = "looker"
-  }
 }
 
 # Create a network interface for the DB instance
@@ -466,10 +439,6 @@ resource "azurerm_virtual_machine" "lookerdb" {
       "sudo /etc/init.d/mysql restart",
       "sudo mysql -u root -e \"CREATE USER looker; SET PASSWORD FOR looker = PASSWORD('${random_string.password.result}'); CREATE DATABASE looker DEFAULT CHARACTER SET utf8 DEFAULT COLLATE utf8_general_ci; GRANT ALL ON looker.* TO looker@'%'; GRANT ALL ON looker_tmp.* TO 'looker'@'%'; FLUSH PRIVILEGES;\"",
     ]
-  }
-
-  tags {
-    environment = "looker"
   }
 }
 

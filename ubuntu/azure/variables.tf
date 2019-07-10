@@ -8,10 +8,6 @@ variable "technical_contact_email" {
   default = "" # your organization's technical contact for Looker
 }
 
-variable "subscription_id" {
-    default = "" # your Azure subscription ID, retrieve with `az account show | grep "id"`
-}
-
 variable "node_count" {
     default = 2
 }

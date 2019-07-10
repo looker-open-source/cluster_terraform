@@ -1,6 +1,5 @@
 provider azurerm {
   version = "~> 1.27.0"
-  subscription_id = "${var.subscription_id}"
 }
 
 provider random {

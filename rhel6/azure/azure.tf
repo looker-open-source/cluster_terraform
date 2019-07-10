@@ -1,6 +1,5 @@
 provider azurerm {
   version = "~> 1.27.0"
-  subscription_id = "${var.subscription_id}"
 }
 
 provider random {
@@ -159,16 +158,6 @@ resource "azurerm_storage_container" "looker" {
   container_access_type = "private"
 }
 
-# Create a bucket / file share within the container
-resource "azurerm_storage_share" "looker" {
-  name = "lookerfiles"
-
-  resource_group_name  = "${azurerm_resource_group.looker.name}"
-  storage_account_name = "${azurerm_storage_account.looker.name}"
-
-  quota = 50
-}
-
 # Create a network security group to restrict port traffic
 resource "azurerm_network_security_group" "looker" {
   name                = "lookersg"
@@ -219,10 +208,9 @@ resource "azurerm_availability_set" "looker" {
   resource_group_name = "${azurerm_resource_group.looker.name}"
 }
 
-# Create the virtual machines themselves!
+# Create the virtual machines
 resource "azurerm_virtual_machine" "looker" {
 
-  # TODO: replace the azurerm_virtual_machine dependency with azurerm_mysql_database
   depends_on                       = ["azurerm_availability_set.looker","azurerm_virtual_machine.lookerdb"]
 
   name                             = "lookerapp-${count.index}"
@@ -236,9 +224,9 @@ resource "azurerm_virtual_machine" "looker" {
   availability_set_id              = "${azurerm_availability_set.looker.id}"
 
   storage_image_reference {
-    publisher = "Canonical"
-    offer     = "UbuntuServer"
-    sku       = "18.04-LTS"
+    publisher = "RedHat"
+    offer     = "RHEL"
+    sku       = "6.9"
     version   = "latest"
   }
 
@@ -272,27 +260,39 @@ resource "azurerm_virtual_machine" "looker" {
     agent = true
   }
 
-  provisioner "remote-exec" {
+   provisioner "remote-exec" {
 
     # Set up Looker!
     inline = [
 
       "sleep 10",
-      # Install required packages
-      "sudo apt-get update -y",
-      "sudo apt-get install libssl-dev -y",
-      "sudo apt-get install cifs-utils -y",
-      "sudo apt-get install fonts-freefont-otf -y",
-      "sudo apt-get install chromium-browser -y",
-      "sudo apt-get install openjdk-8-jdk -y",
-      "sudo apt-get install jq -y",
 
-      # Install the Looker startup script
-      "curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/systemd/looker.service -O",
-      "export CMD=\"sed -i 's/TimeoutStartSec=500/Environment=CHROMIUM_PATH=\\/usr\\/bin\\/chromium-browser/' looker.service\"",
-      "echo $CMD | bash",
-      "sudo mv looker.service /etc/systemd/system/looker.service",
-      "sudo chmod 664 /etc/systemd/system/looker.service",
+      # Install required packages
+      "sudo yum update -y",
+      "sudo yum install openssl-devel -y",
+      "sudo yum install java-1.8.0-openjdk.x86_64 -y",
+
+      # jq is not in yum
+      "curl -L https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64 -O",
+      "chmod +x jq-linux64",
+      "sudo mv jq-linux64 /usr/local/bin/jq",
+
+      # Chromium dependencies:
+      "sudo yum groupinstall 'Fonts' -y",
+      "sudo yum install mesa-libGL mesa-libEGL -y",
+      "sudo yum install dbus-x11 -y",
+      "sudo yum install chromium-browser.x86_64 -y",
+
+      # This is one of the strangest hacks I've ever needed to make. Because chromium-browser --version was returning
+      # the line "a11y dbus service is already running!" before the Chrome version number, helltool incorrectly
+      # detected the Chromium version number as 11, instead of 75.
+      #   (see https://github.com/looker/helltool/blob/ea8c781180a0a6e8d523f1067bf2c54efcdef2bf/jvm-modules/chromium-renderer/src/main/kotlin/com/looker/render/ChromiumService.kt#L123)
+      # We can fix this by creating a Bash script that aliases chromium-browser as chromium (which is what helltool expects), and also cleans up the output.
+      "echo '#!/bin/bash' | sudo tee -a /usr/bin/chromium",
+      "echo 'out=`/usr/bin/chromium-browser \"$@\"`' | sudo tee -a /usr/bin/chromium",
+      "echo 'echo $out | sed \"s/a11y dbus service is already running! //\"' | sudo tee -a /usr/bin/chromium",
+      # This three-line script removes the problematic message from the "chromium-browser --version" output so helltool doesn't get confused:
+      "sudo chmod +x /usr/bin/chromium",
 
       # Configure some important environment settings
       "echo \"net.ipv4.tcp_keepalive_time=200\" | sudo tee -a /etc/sysctl.conf",
@@ -305,45 +305,44 @@ resource "azurerm_virtual_machine" "looker" {
       "sudo groupadd looker",
       "sudo useradd -m -g looker looker",
       "sudo mkdir /home/looker/looker",
-      "sudo chown looker:looker /home/looker/looker",
-      "cd /home/looker/looker",
+      "echo \"export \\`dbus-launch\\`\" | sudo tee -a /home/looker/.bashrc",
+      "sudo chown looker:looker /home/looker/looker /home/looker/.bashrc",
 
       # Download and install Looker
-      "sudo curl -s -i -X POST -H 'Content-Type:application/json' -d '{\"lic\": \"${var.looker_license_key}\", \"email\": \"${var.technical_contact_email}\", \"latest\":\"latest\"}' https://apidownload.looker.com/download -o /home/looker/looker/response.txt",
-      "sudo sed -i 1,9d response.txt",
-      "sudo chmod 777 response.txt",
-      "eula=$(cat response.txt | jq -r '.eulaMessage')",
+      "sudo -u looker curl -s -i -X POST -H 'Content-Type:application/json' -d '{\"lic\": \"${var.looker_license_key}\", \"email\": \"${var.technical_contact_email}\", \"latest\":\"latest\"}' https://apidownload.looker.com/download -o /home/looker/looker/response.txt",
+      "sudo -u looker sed -i 1,9d /home/looker/looker/response.txt",
+      "sudo -u looker chmod 777 /home/looker/looker/response.txt",
+      "eula=$(sudo cat /home/looker/looker/response.txt | jq -r '.eulaMessage')",
       "if [[ \"$eula\" =~ .*EULA.* ]]; then echo \"Error! This script was unable to download the latest Looker JAR file because you have not accepted the EULA. Please go to https://download.looker.com/validate and fill in the form.\"; fi;",
-      "url=$(cat response.txt | jq -r '.url')",
-      "sudo rm response.txt",
-      "sudo curl $url -o /home/looker/looker/looker.jar",
-      "sudo chown looker:looker looker.jar",
-      "sudo curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/looker -O",
-      "sudo chmod 0750 looker",
-      "sudo chown looker:looker looker",
+      "url=$(sudo cat /home/looker/looker/response.txt | jq -r '.url')",
+      "sudo -u looker rm /home/looker/looker/response.txt",
+      "sudo -u looker curl $url -o /home/looker/looker/looker.jar",
+      "sudo -u looker curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/looker -o /home/looker/looker/looker",
+      "sudo -u looker chmod 0750 /home/looker/looker/looker",
 
       # Determine the IP address of this instance so that it can be registered in the cluster
-      "export IP=$(ip addr | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1  -d'/')",
-      "export CMD=\"sudo sed -i 's/LOOKERARGS=\\\"\\\"/LOOKERARGS=\\\"--no-daemonize -d \\/home\\/looker\\/looker\\/looker-db.yml --clustered -H $IP --shared-storage-dir \\/mnt\\/lookerfiles\\\"/' /home/looker/looker/looker\"",
+      "export IP=$(/sbin/ip addr | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1  -d'/')",
+      "export CMD=\"sudo sed -i 's/LOOKERARGS=\\\"\\\"/LOOKERARGS=\\\"-d \\/home\\/looker\\/looker\\/looker-db.yml --clustered -H $IP --shared-storage-dir \\/mnt\\/lookerfiles\\\"/' /home/looker/looker/looker\"",
+      "echo $CMD",
       "echo $CMD | bash",
 
       # Create the database credentials file
-      # TODO: the database host will need to be changed when using an azurerm_mysql_database resource
       "echo \"host: cluster-${random_id.id.hex}-db.${azurerm_resource_group.looker.location}.cloudapp.azure.com\" | sudo tee -a /home/looker/looker/looker-db.yml",
       "echo \"username: looker\" | sudo tee -a /home/looker/looker/looker-db.yml",
-      "echo \"password: ${random_string.password.result}\" | sudo tee -a /home/looker/looker/looker-db.yml",
+      "echo \"password: ${random_string.looker_password.result}\" | sudo tee -a /home/looker/looker/looker-db.yml",
       "echo \"database: looker\" | sudo tee -a /home/looker/looker/looker-db.yml",
       "echo \"dialect: mysql\" | sudo tee -a /home/looker/looker/looker-db.yml",
       "echo \"port: 3306\" | sudo tee -a /home/looker/looker/looker-db.yml",
 
       # Mount the shared file system
       "sudo mkdir -p /mnt/lookerfiles",
-      "sudo mount -t cifs //${azurerm_storage_account.looker.name}.file.core.windows.net/${azurerm_storage_share.looker.name} /mnt/lookerfiles -o vers=3.0,username=${azurerm_storage_account.looker.name},password=${data.azurerm_storage_account.looker.primary_access_key},dir_mode=0777,file_mode=0777,serverino",
+      # Since this is an example, disable RHEL's firewall completely and depend on the Azure firewall for simplicity
+      "sudo service iptables stop",
+      # Azure Storage does not support RHEL6 so we need to use NFS and put a share on the database server
+      "sudo mount lookerdb:/mnt/lookerfiles /mnt/lookerfiles",
 
       # Start Looker (but wait a while before starting additional nodes, because the first node needs to prepare the application database schema)
-      "sudo systemctl daemon-reload",
-      "sudo systemctl enable looker.service",
-      "if [ ${count.index} -eq 0 ]; then sudo systemctl start looker; else sleep 300 && sudo systemctl start looker; fi",
+      "if [ ${count.index} -eq 0 ]; then sudo su - looker -c \"/bin/bash /home/looker/looker/looker start\"; else sleep 300 && sudo su - looker -c \"/bin/bash /home/looker/looker/looker start\"; fi",
     ]
   }
 }
@@ -399,9 +398,9 @@ resource "azurerm_virtual_machine" "lookerdb" {
   availability_set_id              = "${azurerm_availability_set.looker.id}"
 
   storage_image_reference {
-    publisher = "Canonical"
-    offer     = "UbuntuServer"
-    sku       = "18.04-LTS"
+    publisher = "RedHat"
+    offer     = "RHEL"
+    sku       = "6.9"
     version   = "latest"
   }
 
@@ -437,11 +436,26 @@ resource "azurerm_virtual_machine" "lookerdb" {
 
   provisioner "remote-exec" {
     inline = [
-      "sudo apt-get update -y",
-      "sudo apt-get install mysql-server-5.7 -y",
-      "sudo sed -i 's/bind-address/#bind-address/' /etc/mysql/mysql.conf.d/mysqld.cnf",
-      "sudo /etc/init.d/mysql restart",
-      "sudo mysql -u root -e \"CREATE USER looker; SET PASSWORD FOR looker = PASSWORD('${random_string.password.result}'); CREATE DATABASE looker DEFAULT CHARACTER SET utf8 DEFAULT COLLATE utf8_general_ci; GRANT ALL ON looker.* TO looker@'%'; GRANT ALL ON looker_tmp.* TO 'looker'@'%'; FLUSH PRIVILEGES;\"",
+      "sudo yum update -y",
+
+      # Install MySQL and create the Looker application database
+      "sudo rpm -Uvh https://repo.mysql.com/mysql57-community-release-el6-9.noarch.rpm",
+      "sudo sed -i 's/enabled=1/enabled=0/' /etc/yum.repos.d/mysql-community.repo",
+      "sudo yum --enablerepo=mysql57-community install mysql-community-server -y",
+      "echo \"bind-address=0.0.0.0\" | sudo tee -a /etc/my.cnf",
+      "sudo service mysqld restart",
+      "sudo mysql -u root --connect-expired-password -p`grep \"A temporary password\" /var/log/mysqld.log | egrep -o 'root@localhost: (.*)' | sed 's/root@localhost: //'` -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY '${random_string.root_password.result}';\"",
+      "sudo mysql -u root -p'${random_string.root_password.result}' -e \"CREATE USER 'looker' IDENTIFIED BY '${random_string.looker_password.result}'; CREATE DATABASE looker DEFAULT CHARACTER SET utf8 DEFAULT COLLATE utf8_general_ci; GRANT ALL ON looker.* TO looker@'%'; GRANT ALL ON looker_tmp.* TO 'looker'@'%'; FLUSH PRIVILEGES;\"",
+
+      # Since this is an example, disable RHEL's firewall completely and depend on the Azure firewall for simplicity
+      "sudo service iptables stop",
+
+      # Create a share that the application servers will mount
+      "sudo /sbin/service nfs start",
+      "sudo mkdir -p /mnt/lookerfiles",
+      "sudo chmod 777 /mnt/lookerfiles",
+      "echo \"/mnt *(rw,sync)\" | sudo tee -a /etc/exports",
+      "sudo /usr/sbin/exportfs -a",
     ]
   }
 }
@@ -451,7 +465,19 @@ resource "azurerm_virtual_machine" "lookerdb" {
 ##################################################################################
 
 # Generate a random database password
-resource "random_string" "password" {
-  length = 20
-  special = false
+resource "random_string" "root_password" {
+  length = 16
+  special = true
+  number = true
+  min_numeric = 1
+  min_special = 1
+  min_upper = 1
+}
+resource "random_string" "looker_password" {
+  length = 16
+  special = true
+  number = true
+  min_numeric = 1
+  min_special = 1
+  min_upper = 1
 }

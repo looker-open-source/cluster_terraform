@@ -158,6 +158,16 @@ resource "azurerm_storage_container" "looker" {
   container_access_type = "private"
 }
 
+# Create a bucket / file share within the container
+resource "azurerm_storage_share" "looker" {
+  name = "lookerfiles"
+
+  resource_group_name  = "${azurerm_resource_group.looker.name}"
+  storage_account_name = "${azurerm_storage_account.looker.name}"
+
+  quota = 50
+}
+
 # Create a network security group to restrict port traffic
 resource "azurerm_network_security_group" "looker" {
   name                = "lookersg"
@@ -226,7 +236,7 @@ resource "azurerm_virtual_machine" "looker" {
   storage_image_reference {
     publisher = "RedHat"
     offer     = "RHEL"
-    sku       = "6.9"
+    sku       = "7.6"
     version   = "latest"
   }
 
@@ -270,6 +280,7 @@ resource "azurerm_virtual_machine" "looker" {
       # Install required packages
       "sudo yum update -y",
       "sudo yum install openssl-devel -y",
+      "sudo yum install cifs-utils -y",
       "sudo yum install java-1.8.0-openjdk.x86_64 -y",
 
       # jq is not in yum
@@ -277,22 +288,16 @@ resource "azurerm_virtual_machine" "looker" {
       "chmod +x jq-linux64",
       "sudo mv jq-linux64 /usr/local/bin/jq",
 
-      # Chromium dependencies:
+      # Chrome:
       "sudo yum groupinstall 'Fonts' -y",
-      "sudo yum install mesa-libGL mesa-libEGL -y",
-      "sudo yum install dbus-x11 -y",
-      "sudo yum install chromium-browser.x86_64 -y",
-
-      # This is one of the strangest hacks I've ever needed to make. Because chromium-browser --version was returning
-      # the line "a11y dbus service is already running!" before the Chrome version number, helltool incorrectly
-      # detected the Chromium version number as 11, instead of 75.
-      #   (see https://github.com/looker/helltool/blob/ea8c781180a0a6e8d523f1067bf2c54efcdef2bf/jvm-modules/chromium-renderer/src/main/kotlin/com/looker/render/ChromiumService.kt#L123)
-      # We can fix this by creating a Bash script that aliases chromium-browser as chromium (which is what helltool expects), and also cleans up the output.
-      "echo '#!/bin/bash' | sudo tee -a /usr/bin/chromium",
-      "echo 'out=`/usr/bin/chromium-browser \"$@\"`' | sudo tee -a /usr/bin/chromium",
-      "echo 'echo $out | sed \"s/a11y dbus service is already running! //\"' | sudo tee -a /usr/bin/chromium",
-      # This three-line script removes the problematic message from the "chromium-browser --version" output so helltool doesn't get confused:
-      "sudo chmod +x /usr/bin/chromium",
+      "echo \"[google-chrome]\" | sudo tee -a /etc/yum.repos.d/google-chrome.repo",
+      "echo \"name=google-chrome\" | sudo tee -a /etc/yum.repos.d/google-chrome.repo",
+      "echo \"baseurl=http://dl.google.com/linux/chrome/rpm/stable/x86_64\" | sudo tee -a /etc/yum.repos.d/google-chrome.repo",
+      "echo \"enabled=1\" | sudo tee -a /etc/yum.repos.d/google-chrome.repo",
+      "echo \"gpgcheck=1\" | sudo tee -a /etc/yum.repos.d/google-chrome.repo",
+      "echo \"gpgkey=https://dl.google.com/linux/linux_signing_key.pub\" | sudo tee -a /etc/yum.repos.d/google-chrome.repo",
+      "sudo yum install google-chrome-stable -y",
+      "sudo ln -s /usr/bin/google-chrome /usr/bin/chromium",
 
       # Configure some important environment settings
       "echo \"net.ipv4.tcp_keepalive_time=200\" | sudo tee -a /etc/sysctl.conf",
@@ -305,8 +310,7 @@ resource "azurerm_virtual_machine" "looker" {
       "sudo groupadd looker",
       "sudo useradd -m -g looker looker",
       "sudo mkdir /home/looker/looker",
-      "echo \"export \\`dbus-launch\\`\" | sudo tee -a /home/looker/.bashrc",
-      "sudo chown looker:looker /home/looker/looker /home/looker/.bashrc",
+      "sudo chown looker:looker /home/looker/looker",
 
       # Download and install Looker
       "sudo -u looker curl -s -i -X POST -H 'Content-Type:application/json' -d '{\"lic\": \"${var.looker_license_key}\", \"email\": \"${var.technical_contact_email}\", \"latest\":\"latest\"}' https://apidownload.looker.com/download -o /home/looker/looker/response.txt",
@@ -336,15 +340,18 @@ resource "azurerm_virtual_machine" "looker" {
 
       # Mount the shared file system
       "sudo mkdir -p /mnt/lookerfiles",
-      # Since this is an example, disable RHEL's firewall completely and depend on the Azure firewall for simplicity
-      "sudo service iptables stop",
-      # Azure Storage does not support RHEL6 so we need to use NFS and put a share on the database server
-      "echo \"lookerdb:/mnt/lookerfiles /mnt/lookerfiles\" | sudo tee -a /etc/fstab",
+      "echo \"//${azurerm_storage_account.looker.name}.file.core.windows.net/${azurerm_storage_share.looker.name} /mnt/lookerfiles cifs nofail,vers=3.0,username=${azurerm_storage_account.looker.name},password=${data.azurerm_storage_account.looker.primary_access_key},dir_mode=0777,file_mode=0777,serverino\" | sudo tee -a /etc/fstab",
       "sudo mount -a",
+
+      # Since this is an example, disable RHEL's firewall completely and depend on the Azure firewall for simplicity
+      "sudo systemctl stop firewalld",
 
       # Start Looker (but wait a while before starting additional nodes, because the first node needs to prepare the application database schema)
       "if [ ${count.index} -eq 0 ]; then sudo su - looker -c \"/bin/bash /home/looker/looker/looker start\"; else sleep 300 && sudo su - looker -c \"/bin/bash /home/looker/looker/looker start\"; fi",
       "echo \"su - looker -c \\\"/bin/bash /home/looker/looker/looker start\\\"\" | sudo tee -a /etc/rc.d/rc.local",
+      "sudo chmod +x /etc/rc.d/rc.local",
+      "sudo systemctl enable rc-local",
+      "sudo systemctl start rc-local",
     ]
   }
 }
@@ -402,7 +409,7 @@ resource "azurerm_virtual_machine" "lookerdb" {
   storage_image_reference {
     publisher = "RedHat"
     offer     = "RHEL"
-    sku       = "6.9"
+    sku       = "7.6"
     version   = "latest"
   }
 
@@ -441,23 +448,15 @@ resource "azurerm_virtual_machine" "lookerdb" {
       "sudo yum update -y",
 
       # Install MySQL and create the Looker application database
-      "sudo rpm -Uvh https://repo.mysql.com/mysql57-community-release-el6-9.noarch.rpm",
-      "sudo sed -i 's/enabled=1/enabled=0/' /etc/yum.repos.d/mysql-community.repo",
-      "sudo yum --enablerepo=mysql57-community install mysql-community-server -y",
+      "sudo yum install https://dev.mysql.com/get/mysql80-community-release-el7-3.noarch.rpm -y",
+      "sudo yum --disablerepo=mysql80-community --enablerepo=mysql57-community install mysql-community-server -y",
       "echo \"bind-address=0.0.0.0\" | sudo tee -a /etc/my.cnf",
-      "sudo service mysqld restart",
+      "sudo systemctl restart mysqld",
       "sudo mysql -u root --connect-expired-password -p`grep \"A temporary password\" /var/log/mysqld.log | egrep -o 'root@localhost: (.*)' | sed 's/root@localhost: //'` -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY '${random_string.root_password.result}';\"",
-      "sudo mysql -u root -p'${random_string.root_password.result}' -e \"CREATE USER 'looker' IDENTIFIED BY '${random_string.looker_password.result}'; CREATE DATABASE looker DEFAULT CHARACTER SET utf8 DEFAULT COLLATE utf8_general_ci; GRANT ALL ON looker.* TO looker@'%'; GRANT ALL ON looker_tmp.* TO 'looker'@'%'; FLUSH PRIVILEGES;\"",
+      "sudo mysql -u root -p\"${random_string.root_password.result}\" -e \"CREATE USER 'looker' IDENTIFIED BY '${random_string.looker_password.result}'; CREATE DATABASE looker DEFAULT CHARACTER SET utf8 DEFAULT COLLATE utf8_general_ci; GRANT ALL ON looker.* TO looker@'%'; GRANT ALL ON looker_tmp.* TO 'looker'@'%'; FLUSH PRIVILEGES;\"",
 
       # Since this is an example, disable RHEL's firewall completely and depend on the Azure firewall for simplicity
-      "sudo service iptables stop",
-
-      # Create a share that the application servers will mount
-      "sudo /sbin/service nfs start",
-      "sudo mkdir -p /mnt/lookerfiles",
-      "sudo chmod 777 /mnt/lookerfiles",
-      "echo \"/mnt *(rw,sync)\" | sudo tee -a /etc/exports",
-      "sudo /usr/sbin/exportfs -a",
+      "sudo systemctl stop firewalld",
     ]
   }
 }

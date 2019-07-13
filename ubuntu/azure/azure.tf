@@ -327,7 +327,6 @@ resource "azurerm_virtual_machine" "looker" {
       "echo $CMD | bash",
 
       # Create the database credentials file
-      # TODO: the database host will need to be changed when using an azurerm_mysql_database resource
       "echo \"host: cluster-${random_id.id.hex}-db.${azurerm_resource_group.looker.location}.cloudapp.azure.com\" | sudo tee -a /home/looker/looker/looker-db.yml",
       "echo \"username: looker\" | sudo tee -a /home/looker/looker/looker-db.yml",
       "echo \"password: ${random_string.password.result}\" | sudo tee -a /home/looker/looker/looker-db.yml",
@@ -337,7 +336,8 @@ resource "azurerm_virtual_machine" "looker" {
 
       # Mount the shared file system
       "sudo mkdir -p /mnt/lookerfiles",
-      "sudo mount -t cifs //${azurerm_storage_account.looker.name}.file.core.windows.net/${azurerm_storage_share.looker.name} /mnt/lookerfiles -o vers=3.0,username=${azurerm_storage_account.looker.name},password=${data.azurerm_storage_account.looker.primary_access_key},dir_mode=0777,file_mode=0777,serverino",
+      "echo \"//${azurerm_storage_account.looker.name}.file.core.windows.net/${azurerm_storage_share.looker.name} /mnt/lookerfiles cifs nofail,vers=3.0,username=${azurerm_storage_account.looker.name},password=${data.azurerm_storage_account.looker.primary_access_key},dir_mode=0777,file_mode=0777,serverino\" | sudo tee -a /etc/fstab",
+      "sudo mount -a",
 
       # Start Looker (but wait a while before starting additional nodes, because the first node needs to prepare the application database schema)
       "sudo systemctl daemon-reload",
@@ -355,10 +355,10 @@ output "Load_Balanced_Host" {
 ## BEGIN WORKAROUND FOR "MICROSOFT AZURE DATABASE FOR MYSQL" AUTHENTICATION ISSUE ##
 ##                                                                                 #
 ## The following should be replaced with an azurerm_mysql_database resource as     #
-## soon as possible. We do not want to manage a VM for the database server and     #
-## this setup is literally as insecure as it could be. This is necessary due to    #
-## the "Handshake failed" error  helltool returns when connecting to a managed     #
-## Azure MySQL database, maybe because of the use of a fully-qualified username.   #
+## soon as possible. We do not want to manage a VM for the database server.        #
+## This is necessary due to the "Handshake failed" error helltool returns when     #
+## connecting to a managed Azure MySQL database, maybe because of the use of a     #
+## fully-qualified username.                                                       #
 ##                                                                                 #
 ####################################################################################
 
@@ -444,10 +444,6 @@ resource "azurerm_virtual_machine" "lookerdb" {
     ]
   }
 }
-
-##################################################################################
-## END WORKAROUND FOR "MICROSOFT AZURE DATABASE FOR MYSQL" AUTHENTICATION ISSUE ##
-##################################################################################
 
 # Generate a random database password
 resource "random_string" "password" {

@@ -1,7 +1,7 @@
 # Use terraform to automatically set up a Looker cluster in the cloud on AWS, Azure, or GCP
 
 ## Status and Support
-The purpose of this repository is to give you a starting point to  deploy a Looker cluster on a cloud environment of your choice.
+The purpose of this repository is to give you a starting point to deploy a Looker cluster on a cloud environment of your choice.
 
 These terraform scripts are NOT supported or warranteed by Looker in any way. Please do not contact Looker support for issues. These scripts are provided as examples only and must be modified by you to ensure they are appropriate for your needs.
 
@@ -27,14 +27,14 @@ These terraform scripts are NOT supported or warranteed by Looker in any way. Pl
     **(Windows)**: Please follow Microsoft and Google documentation to install dependencies in your Windows environment.
 
 3. Open a shell and clone this repository into an empty directory
-4. Change the directory to either `aws-cluster`, `azure-cluster`, or `gcp-cluster`
+4. Change the directory to either `aws`, `azure`, or `gcp`
 5. Set values for a few configuration variables that are specific to you:
 
-    **(Azure)**: set your Azure subscription ID in the [variables.tf](https://github.com/drewgillson/looker_cluster_terraform/blob/master/azure-cluster/variables.tf) file to prevent DNS namespace collisions
+    **(Azure)**: set your Azure subscription ID in the [variables.tf](https://github.com/llooker/looker_cluster_terraform/blob/master/azure/variables.tf) file to prevent DNS namespace collisions
 
-    **(AWS)**: set your access key and secret key in the [variables.tf](https://github.com/drewgillson/looker_cluster_terraform/blob/master/aws-cluster/variables.tf) file
+    **(AWS)**: set your access key and secret key in the [variables.tf](https://github.com/llooker/looker_cluster_terraform/blob/master/aws/variables.tf) file
 
-    **(GCP)**: set your SSH username, billing account ID, and organization ID in the [variables.tf](https://github.com/drewgillson/looker_cluster_terraform/blob/master/gcp-cluster/variables.tf) file 
+    **(GCP)**: set your SSH username, billing account ID, and organization ID in the [variables.tf](https://github.com/llooker/looker_cluster_terraform/blob/master/gcp/variables.tf) file 
 
 6. Type `terraform init` to install dependencies
 7. Type `terraform apply` and wait 10-15 minutes

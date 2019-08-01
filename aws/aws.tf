@@ -2,7 +2,7 @@ provider "aws" {
   access_key = "${var.aws_access_key}"
   secret_key = "${var.aws_secret_key}"
   region     = "${var.aws_region}"
-  version = "~> 1.57"
+  version = "~> 2.0"
 }
 
 provider random {
@@ -39,7 +39,7 @@ resource "aws_subnet" "subnet-looker" {
 # Create a database subnet group to configure a high-availabilty RDS instance for the Looker application database server
 resource "aws_db_subnet_group" "subnet-group-looker" {
   name        = "looker-subnet-group"
-  subnet_ids  = ["${aws_subnet.subnet-looker.*.id}"]
+  subnet_ids  = "${aws_subnet.subnet-looker.*.id}"
 }
 
 # Create the inbound security rules
@@ -260,92 +260,36 @@ resource "aws_instance" "looker-instance" {
     volume_type           = "gp2"
     volume_size           = "30"
   }
-  provisioner "remote-exec" {
-    connection {
-      type = "ssh"
-      user = "ubuntu"
-      private_key = "${file("~/.ssh/id_rsa")}"
-      timeout = "1m"
-      agent = true
-    }
-
-    # Set up Looker!
-    inline = [
-
-      "sleep 10",
-      # Install required packages
-      "sudo apt-get update -y",
-      "sudo apt-get install libssl-dev -y",
-      "sudo apt-get install cifs-utils -y",
-      "sudo apt-get install fonts-freefont-otf -y",
-      "sudo apt-get install chromium-browser -y",
-      "sudo apt-get install openjdk-8-jdk -y",
-      "sudo apt-get install nfs-common -y",
-      "sudo apt-get install jq -y",
-      
-      # Uncomment the following line if connecting to AWS Redshift:
-      #"sudo ip link set dev eth0 mtu 1500",
-
-      # Install the Looker startup script
-      "curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/systemd/looker.service -O",
-      "export CMD=\"sed -i 's/TimeoutStartSec=500/Environment=CHROMIUM_PATH=\\/usr\\/bin\\/chromium-browser/' looker.service\"",
-      "echo $CMD | bash",
-      "sudo mv looker.service /etc/systemd/system/looker.service",
-      "sudo chmod 664 /etc/systemd/system/looker.service",
-
-      # Configure some impoortant environment settings
-      "echo \"net.ipv4.tcp_keepalive_time=200\" | sudo tee -a /etc/sysctl.conf",
-      "echo \"net.ipv4.tcp_keepalive_intvl=200\" | sudo tee -a /etc/sysctl.conf",
-      "echo \"net.ipv4.tcp_keepalive_probes=5\" | sudo tee -a /etc/sysctl.conf",
-      "echo \"looker     soft     nofile     4096\" | sudo tee -a /etc/security/limits.conf",
-      "echo \"looker     hard     nofile     4096\" | sudo tee -a /etc/security/limits.conf",
-
-      # Configure user and group permissions
-      "sudo groupadd looker",
-      "sudo useradd -m -g looker looker",
-      "sudo mkdir /home/looker/looker",
-      "sudo chown looker:looker /home/looker/looker",
-      "cd /home/looker/looker",
-
-      # Download and install Looker
-      "sudo curl -s -i -X POST -H 'Content-Type:application/json' -d '{\"lic\": \"${var.looker_license_key}\", \"email\": \"${var.technical_contact_email}\", \"latest\":\"latest\"}' https://apidownload.looker.com/download -o /home/looker/looker/response.txt",
-      "sudo sed -i 1,9d response.txt",
-      "sudo chmod 777 response.txt",
-      "eula=$(cat response.txt | jq -r '.eulaMessage')",
-      "if [[ \"$eula\" =~ .*EULA.* ]]; then echo \"Error! This script was unable to download the latest Looker JAR file because you have not accepted the EULA. Please go to https://download.looker.com/validate and fill in the form.\"; fi;",
-      "url=$(cat response.txt | jq -r '.url')",
-      "sudo rm response.txt",
-      "sudo curl $url -o /home/looker/looker/looker.jar",
-      "sudo chown looker:looker looker.jar",
-      "sudo curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/looker -O",
-      "sudo chmod 0750 looker",
-      "sudo chown looker:looker looker",
-
-      # Determine the IP address of this instance so that it can be registered in the cluster
-      "export IP=$(ip addr | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1  -d'/')",
-      "export CMD=\"sudo sed -i 's/LOOKERARGS=\\\"\\\"/LOOKERARGS=\\\"--no-daemonize -d \\/home\\/looker\\/looker\\/looker-db.yml --clustered -H $IP --shared-storage-dir \\/mnt\\/lookerfiles\\\"/' /home/looker/looker/looker\"",
-      "echo $CMD | bash",
-
-      # Create the database credentials file
-      "echo \"host: ${aws_db_instance.looker-app-db.address}\" | sudo tee -a /home/looker/looker/looker-db.yml",
-      "echo \"username: looker\" | sudo tee -a /home/looker/looker/looker-db.yml",
-      "echo \"password: ${random_string.password.result}\" | sudo tee -a /home/looker/looker/looker-db.yml",
-      "echo \"database: looker\" | sudo tee -a /home/looker/looker/looker-db.yml",
-      "echo \"dialect: mysql\" | sudo tee -a /home/looker/looker/looker-db.yml",
-      "echo \"port: 3306\" | sudo tee -a /home/looker/looker/looker-db.yml",
-
-      # Mount the shared file system
-      "sudo mkdir -p /mnt/lookerfiles",
-      "sudo mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport ${aws_efs_mount_target.efs-mount.0.dns_name}:/ /mnt/lookerfiles",
-      "sudo chown looker:looker /mnt/lookerfiles",
-      "cat /proc/mounts | grep looker",
-
-      # Start Looker (but wait a while before starting additional nodes, because the first node needs to prepare the application database schema)
-      "sudo systemctl daemon-reload",
-      "sudo systemctl enable looker.service",
-      "if [ ${count.index} -eq 0 ]; then sudo systemctl start looker; else sleep 300 && sudo systemctl start looker; fi",
-    ]
+  
+  connection {
+    host = "${element(aws_instance.looker-instance.*.public_dns, count.index)}"
+    type = "ssh"
+    user = "ubuntu"
+    private_key = "${file("~/.ssh/id_rsa")}"
+    timeout = "1m"
+    agent = true
   }
+
+  provisioner "file" {
+    source      = "${var.provisioning_script}"
+    destination = "/tmp/${var.provisioning_script}"
+  }
+  provisioner "remote-exec" {
+    inline = [
+      "sleep 10",
+
+      "export LOOKER_LICENSE_KEY=${var.looker_license_key}",
+      "export LOOKER_TECHNICAL_CONTACT_EMAIL=${var.technical_contact_email}",
+      "export SHARED_STORAGE_SERVER=${aws_efs_mount_target.efs-mount.dns_name}",
+      "export DB_SERVER=${aws_db_instance.looker-app-db.address}",
+      "export DB_USER=looker",
+      "export DB_PASSWORD=\"${random_string.password.result}\"",
+      "export NODE_COUNT=${count.index}",
+
+      "chmod +x /tmp/${var.provisioning_script}",
+      "/bin/bash /tmp/${var.provisioning_script}",
+   ]
+ }
 
   lifecycle {
     # Ignore changes to these arguments because of known issues with the Terraform AWS provider:
@@ -415,44 +359,45 @@ resource "aws_elb" "looker-elb" {
   subnets                     = ["${aws_subnet.subnet-looker.0.id}"]
   internal                    = "false"
   security_groups             = ["${aws_security_group.ingress-all-looker.id}"]
-  instances                   = ["${aws_instance.looker-instance.*.id}"]
+  instances                   = "${aws_instance.looker-instance.*.id}"
   cross_zone_load_balancing   = true
   idle_timeout                = 3600
   connection_draining         = false
   connection_draining_timeout = 300
 
-  listener = [
-    {
-      instance_port      = "9999"
-      instance_protocol  = "https"
-      lb_port            = "443"
-      lb_protocol        = "https"
-      ssl_certificate_id = "${aws_iam_server_certificate.looker_iam_cert.arn}"
-    },
-    {
-      instance_port      = "19999"
-      instance_protocol  = "https"
-      lb_port            = "19999"
-      lb_protocol        = "https"
-      ssl_certificate_id = "${aws_iam_server_certificate.looker_iam_cert.arn}"
-    },
-  ]
+  listener {
+    instance_port      = "9999"
+    instance_protocol  = "https"
+    lb_port            = "443"
+    lb_protocol        = "https"
+    ssl_certificate_id = "${aws_iam_server_certificate.looker_iam_cert.arn}"
+  }
 
-  health_check = [
-    {
-      target              = "https:9999/alive"
-      interval            = 30
-      healthy_threshold   = 2
-      unhealthy_threshold = 2
-      timeout             = 5
-    },
-  ]
+  listener {
+    instance_port      = "19999"
+    instance_protocol  = "https"
+    lb_port            = "19999"
+    lb_protocol        = "https"
+    ssl_certificate_id = "${aws_iam_server_certificate.looker_iam_cert.arn}"
+  }
+
+  health_check {
+    target              = "https:9999/alive"
+    interval            = 30
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    timeout             = 5
+  }
 }
 
 # Generate a random database password
 resource "random_string" "password" {
-  length = 20
-  special = false
+  length = 16
+  special = true
+  number = true
+  min_numeric = 1
+  min_special = 1
+  min_upper = 1
 }
 
 output "Load_Balanced_Host" {

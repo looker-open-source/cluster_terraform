@@ -218,9 +218,10 @@ resource "azurerm_availability_set" "looker" {
   resource_group_name = "${azurerm_resource_group.looker.name}"
 }
 
-# Create the virtual machines
+# Create the virtual machines themselves!
 resource "azurerm_virtual_machine" "looker" {
 
+  # TODO: replace the azurerm_virtual_machine dependency with azurerm_mysql_database
   depends_on                       = ["azurerm_availability_set.looker","azurerm_virtual_machine.lookerdb"]
 
   name                             = "lookerapp-${count.index}"
@@ -234,9 +235,9 @@ resource "azurerm_virtual_machine" "looker" {
   availability_set_id              = "${azurerm_availability_set.looker.id}"
 
   storage_image_reference {
-    publisher = "RedHat"
-    offer     = "RHEL"
-    sku       = "7.6"
+    publisher = "${var.os_publisher}"
+    offer     = "${var.os_offer}"
+    sku       = "${var.os_sku}"
     version   = "latest"
   }
 
@@ -270,88 +271,28 @@ resource "azurerm_virtual_machine" "looker" {
     agent = true
   }
 
-   provisioner "remote-exec" {
+  provisioner "file" {
+    source      = "${var.provisioning_script}/setup-${var.provisioning_script}.sh"
+    destination = "/tmp/setup-${var.provisioning_script}.sh"
+  }
+
+  provisioner "remote-exec" {
 
     # Set up Looker!
     inline = [
-
       "sleep 10",
 
-      # Install required packages
-      "sudo yum update -y",
-      "sudo yum install openssl-devel -y",
-      "sudo yum install cifs-utils -y",
-      "sudo yum install java-1.8.0-openjdk.x86_64 -y",
+      "export LOOKER_LICENSE_KEY=${var.looker_license_key}",
+      "export LOOKER_TECHNICAL_CONTACT_EMAIL=${var.technical_contact_email}",
+      "export SHARED_STORAGE_SERVER=${azurerm_storage_account.looker.name}.file.core.windows.net/${azurerm_storage_share.looker.name}",
+      "export DB_SERVER=cluster-${random_id.id.hex}-db.${azurerm_resource_group.looker.location}.cloudapp.azure.com",
+      "export DB_USER=looker",
+      "export DB_LOOKER_PASSWORD=\"${random_string.looker_password.result}\"",
+      "export NODE_COUNT=${count.index}",
+      "export FSTAB_ENTRY=\"//${azurerm_storage_account.looker.name}.file.core.windows.net/${azurerm_storage_share.looker.name} /mnt/lookerfiles cifs nofail,vers=3.0,username=${azurerm_storage_account.looker.name},password=${data.azurerm_storage_account.looker.primary_access_key},dir_mode=0777,file_mode=0777,serverino\"",
 
-      # jq is not in yum
-      "curl -L https://github.com/stedolan/jq/releases/download/jq-1.6/jq-linux64 -O",
-      "chmod +x jq-linux64",
-      "sudo mv jq-linux64 /usr/local/bin/jq",
-
-      # Chrome:
-      "sudo yum groupinstall 'Fonts' -y",
-      "echo \"[google-chrome]\" | sudo tee -a /etc/yum.repos.d/google-chrome.repo",
-      "echo \"name=google-chrome\" | sudo tee -a /etc/yum.repos.d/google-chrome.repo",
-      "echo \"baseurl=http://dl.google.com/linux/chrome/rpm/stable/x86_64\" | sudo tee -a /etc/yum.repos.d/google-chrome.repo",
-      "echo \"enabled=1\" | sudo tee -a /etc/yum.repos.d/google-chrome.repo",
-      "echo \"gpgcheck=1\" | sudo tee -a /etc/yum.repos.d/google-chrome.repo",
-      "echo \"gpgkey=https://dl.google.com/linux/linux_signing_key.pub\" | sudo tee -a /etc/yum.repos.d/google-chrome.repo",
-      "sudo yum install google-chrome-stable -y",
-      "sudo ln -s /usr/bin/google-chrome /usr/bin/chromium",
-
-      # Configure some important environment settings
-      "echo \"net.ipv4.tcp_keepalive_time=200\" | sudo tee -a /etc/sysctl.conf",
-      "echo \"net.ipv4.tcp_keepalive_intvl=200\" | sudo tee -a /etc/sysctl.conf",
-      "echo \"net.ipv4.tcp_keepalive_probes=5\" | sudo tee -a /etc/sysctl.conf",
-      "echo \"looker     soft     nofile     4096\" | sudo tee -a /etc/security/limits.conf",
-      "echo \"looker     hard     nofile     4096\" | sudo tee -a /etc/security/limits.conf",
-
-      # Configure user and group permissions
-      "sudo groupadd looker",
-      "sudo useradd -m -g looker looker",
-      "sudo mkdir /home/looker/looker",
-      "sudo chown looker:looker /home/looker/looker",
-
-      # Download and install Looker
-      "sudo -u looker curl -s -i -X POST -H 'Content-Type:application/json' -d '{\"lic\": \"${var.looker_license_key}\", \"email\": \"${var.technical_contact_email}\", \"latest\":\"latest\"}' https://apidownload.looker.com/download -o /home/looker/looker/response.txt",
-      "sudo -u looker sed -i 1,9d /home/looker/looker/response.txt",
-      "sudo -u looker chmod 777 /home/looker/looker/response.txt",
-      "eula=$(sudo cat /home/looker/looker/response.txt | jq -r '.eulaMessage')",
-      "if [[ \"$eula\" =~ .*EULA.* ]]; then echo \"Error! This script was unable to download the latest Looker JAR file because you have not accepted the EULA. Please go to https://download.looker.com/validate and fill in the form.\"; fi;",
-      "url=$(sudo cat /home/looker/looker/response.txt | jq -r '.url')",
-      "sudo -u looker rm /home/looker/looker/response.txt",
-      "sudo -u looker curl $url -o /home/looker/looker/looker.jar",
-      "sudo -u looker curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/looker -o /home/looker/looker/looker",
-      "sudo -u looker chmod 0750 /home/looker/looker/looker",
-
-      # Determine the IP address of this instance so that it can be registered in the cluster
-      "export IP=$(/sbin/ip addr | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1  -d'/')",
-      "export CMD=\"sudo sed -i 's/LOOKERARGS=\\\"\\\"/LOOKERARGS=\\\"-d \\/home\\/looker\\/looker\\/looker-db.yml --clustered -H $IP --shared-storage-dir \\/mnt\\/lookerfiles\\\"/' /home/looker/looker/looker\"",
-      "echo $CMD",
-      "echo $CMD | bash",
-
-      # Create the database credentials file
-      "echo \"host: cluster-${random_id.id.hex}-db.${azurerm_resource_group.looker.location}.cloudapp.azure.com\" | sudo tee -a /home/looker/looker/looker-db.yml",
-      "echo \"username: looker\" | sudo tee -a /home/looker/looker/looker-db.yml",
-      "echo \"password: ${random_string.looker_password.result}\" | sudo tee -a /home/looker/looker/looker-db.yml",
-      "echo \"database: looker\" | sudo tee -a /home/looker/looker/looker-db.yml",
-      "echo \"dialect: mysql\" | sudo tee -a /home/looker/looker/looker-db.yml",
-      "echo \"port: 3306\" | sudo tee -a /home/looker/looker/looker-db.yml",
-
-      # Mount the shared file system
-      "sudo mkdir -p /mnt/lookerfiles",
-      "echo \"//${azurerm_storage_account.looker.name}.file.core.windows.net/${azurerm_storage_share.looker.name} /mnt/lookerfiles cifs nofail,vers=3.0,username=${azurerm_storage_account.looker.name},password=${data.azurerm_storage_account.looker.primary_access_key},dir_mode=0777,file_mode=0777,serverino\" | sudo tee -a /etc/fstab",
-      "sudo mount -a",
-
-      # Since this is an example, disable RHEL's firewall completely and depend on the Azure firewall for simplicity
-      "sudo systemctl stop firewalld",
-
-      # Start Looker (but wait a while before starting additional nodes, because the first node needs to prepare the application database schema)
-      "if [ ${count.index} -eq 0 ]; then sudo su - looker -c \"/bin/bash /home/looker/looker/looker start\"; else sleep 300 && sudo su - looker -c \"/bin/bash /home/looker/looker/looker start\"; fi",
-      "echo \"su - looker -c \\\"/bin/bash /home/looker/looker/looker start\\\"\" | sudo tee -a /etc/rc.d/rc.local",
-      "sudo chmod +x /etc/rc.d/rc.local",
-      "sudo systemctl enable rc-local",
-      "sudo systemctl start rc-local",
+      "chmod +x /tmp/setup-${var.provisioning_script}.sh",
+      "/bin/bash /tmp/setup-${var.provisioning_script}.sh",
     ]
   }
 }
@@ -407,9 +348,9 @@ resource "azurerm_virtual_machine" "lookerdb" {
   availability_set_id              = "${azurerm_availability_set.looker.id}"
 
   storage_image_reference {
-    publisher = "RedHat"
-    offer     = "RHEL"
-    sku       = "7.6"
+    publisher = "${var.os_publisher}"
+    offer     = "${var.os_offer}"
+    sku       = "${var.os_sku}"
     version   = "latest"
   }
 
@@ -443,20 +384,19 @@ resource "azurerm_virtual_machine" "lookerdb" {
     agent = true
   }
 
+  provisioner "file" {
+    source      = "${var.provisioning_script}/setup-${var.provisioning_script}-db.sh"
+    destination = "/tmp/setup-${var.provisioning_script}-db.sh"
+  }
   provisioner "remote-exec" {
     inline = [
-      "sudo yum update -y",
+      "sleep 10",
 
-      # Install MySQL and create the Looker application database
-      "sudo yum install https://dev.mysql.com/get/mysql80-community-release-el7-3.noarch.rpm -y",
-      "sudo yum --disablerepo=mysql80-community --enablerepo=mysql57-community install mysql-community-server -y",
-      "echo \"bind-address=0.0.0.0\" | sudo tee -a /etc/my.cnf",
-      "sudo systemctl restart mysqld",
-      "sudo mysql -u root --connect-expired-password -p`grep \"A temporary password\" /var/log/mysqld.log | egrep -o 'root@localhost: (.*)' | sed 's/root@localhost: //'` -e \"ALTER USER 'root'@'localhost' IDENTIFIED BY '${random_string.root_password.result}';\"",
-      "sudo mysql -u root -p\"${random_string.root_password.result}\" -e \"CREATE USER 'looker' IDENTIFIED BY '${random_string.looker_password.result}'; CREATE DATABASE looker DEFAULT CHARACTER SET utf8 DEFAULT COLLATE utf8_general_ci; GRANT ALL ON looker.* TO looker@'%'; GRANT ALL ON looker_tmp.* TO 'looker'@'%'; FLUSH PRIVILEGES;\"",
+      "export DB_ROOT_PASSWORD=\"${random_string.root_password.result}\"",
+      "export DB_LOOKER_PASSWORD=\"${random_string.looker_password.result}\"",
 
-      # Since this is an example, disable RHEL's firewall completely and depend on the Azure firewall for simplicity
-      "sudo systemctl stop firewalld",
+      "chmod +x /tmp/setup-${var.provisioning_script}-db.sh",
+      "/bin/bash /tmp/setup-${var.provisioning_script}-db.sh",
     ]
   }
 }

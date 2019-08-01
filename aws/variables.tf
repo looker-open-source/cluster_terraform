@@ -21,7 +21,7 @@ variable "aws_region" {
 }
 
 variable "instances" {
-    default = 2
+    default = 1
 }
 
 variable "db_instance_type" {
@@ -33,5 +33,10 @@ variable "ec2_instance_type" {
 }
 
 variable "ami_id" {
+#     default = "ami-027386b91d3c0bf78" # Ubuntu 14.04 amd64
     default = "ami-0bbe6b35405ecebdb" # Ubuntu 18.04 x86
+}
+
+variable "provisioning_script" {
+    default = "setup-ubuntu-18.04.sh" # The setup script must match the AMI above!
 }

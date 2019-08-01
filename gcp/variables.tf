@@ -45,5 +45,10 @@ variable "os" {
 }
 
 variable "instance_count" {
-  default = "2"
+  default = "1"
+}
+
+variable "provisioning_script" {
+    default = "../aws/setup-ubuntu-18.04.sh" # The setup script must match the AMI above!
+               # AWS and GCP setup scripts are equivalent
 }

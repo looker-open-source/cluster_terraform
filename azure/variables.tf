@@ -12,8 +12,20 @@ variable "node_count" {
     default = 1
 }
 variable "instance_type" {
-    default = "Standard_D3_v2"
+    default = "Standard_D1_v2"
 }
 variable "location" {
     default = "eastus"
+}
+variable "os_publisher" {
+    default = "RedHat"
+}
+variable "os_offer" {
+    default = "RHEL"
+}
+variable "os_sku" {
+    default = "7.6"
+}
+variable "provisioning_script" {
+    default = "rhel7" # The setup script must match the offer/SKU above!
 }

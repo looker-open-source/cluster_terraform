@@ -254,87 +254,30 @@ resource "null_resource" "cluster-nodes" {
 
   connection {
     host = "${element(google_compute_instance.looker.*.network_interface.0.access_config.0.nat_ip, 0)}"
+    type = "ssh"
+    user = "${var.ssh_username}"
+    private_key = "${file("~/.ssh/google_compute_engine")}"
   }
 
-  provisioner "remote-exec" {
-    connection {
-      type = "ssh"
-      user = "${var.ssh_username}"
-      private_key = "${file("~/.ssh/google_compute_engine")}"
-    }
-    
+  provisioner "file" {
+    source      = "${var.provisioning_script}/${var.provisioning_script}"
+    destination = "/tmp/${var.provisioning_script}"
+  }
+  provisioner "remote-exec" {    
     # Set up Looker!
     inline = [
-
       "sleep 10",
-      # Install required packages
-      "sudo apt-get update -y",
-      "sudo apt-get install libssl-dev -y",
-      "sudo apt-get install cifs-utils -y",
-      "sudo apt-get install fonts-freefont-otf -y",
-      "sudo apt-get install chromium-browser -y",
-      "sudo apt-get install openjdk-8-jdk -y",
-      "sudo apt-get install nfs-common -y",
-      "sudo apt-get install jq -y",
 
-      # Install the Looker startup script
-      "curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/systemd/looker.service -O",
-      "export CMD=\"sed -i 's/TimeoutStartSec=500/Environment=CHROMIUM_PATH=\\/usr\\/bin\\/chromium-browser/' looker.service\"",
-      "echo $CMD | bash",
-      "sudo mv looker.service /etc/systemd/system/looker.service",
-      "sudo chmod 664 /etc/systemd/system/looker.service",
+      "export LOOKER_LICENSE_KEY=${var.looker_license_key}",
+      "export LOOKER_TECHNICAL_CONTACT_EMAIL=${var.technical_contact_email}",
+      "export SHARED_STORAGE_SERVER=${google_filestore_instance.looker.networks.0.ip_addresses.0}",
+      "export DB_SERVER=${google_sql_database_instance.looker.ip_address.0.ip_address}",
+      "export DB_USER=looker",
+      "export DB_LOOKER_PASSWORD=\"${random_id.database-password.hex}\"",
+      "export NODE_COUNT=${count.index}",
 
-      # Configure some impoortant environment settings
-      "echo \"net.ipv4.tcp_keepalive_time=200\" | sudo tee -a /etc/sysctl.conf",
-      "echo \"net.ipv4.tcp_keepalive_intvl=200\" | sudo tee -a /etc/sysctl.conf",
-      "echo \"net.ipv4.tcp_keepalive_probes=5\" | sudo tee -a /etc/sysctl.conf",
-      "echo \"looker     soft     nofile     4096\" | sudo tee -a /etc/security/limits.conf",
-      "echo \"looker     hard     nofile     4096\" | sudo tee -a /etc/security/limits.conf",
-
-      # Configure user and group permissions
-      "sudo groupadd looker",
-      "sudo useradd -m -g looker looker",
-      "sudo mkdir /home/looker/looker",
-      "sudo chown looker:looker /home/looker/looker",
-      "cd /home/looker/looker",
-
-      # Download and install Looker
-      "sudo curl -s -i -X POST -H 'Content-Type:application/json' -d '{\"lic\": \"${var.looker_license_key}\", \"email\": \"${var.technical_contact_email}\", \"latest\":\"latest\"}' https://apidownload.looker.com/download -o /home/looker/looker/response.txt",
-      "sudo sed -i 1,9d response.txt",
-      "sudo chmod 777 response.txt",
-      "eula=$(cat response.txt | jq -r '.eulaMessage')",
-      "if [[ \"$eula\" =~ .*EULA.* ]]; then echo \"Error! This script was unable to download the latest Looker JAR file because you have not accepted the EULA. Please go to https://download.looker.com/validate and fill in the form.\"; fi;",
-      "url=$(cat response.txt | jq -r '.url')",
-      "sudo rm response.txt",
-      "sudo curl $url -o /home/looker/looker/looker.jar",
-      "sudo chown looker:looker looker.jar",
-      "sudo curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/looker -O",
-      "sudo chmod 0750 looker",
-      "sudo chown looker:looker looker",
-
-      # Determine the IP address of this instance so that it can be registered in the cluster
-      "export IP=$(ip addr | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1  -d'/')",
-      "export CMD=\"sudo sed -i 's/LOOKERARGS=\\\"\\\"/LOOKERARGS=\\\"--no-daemonize -d \\/home\\/looker\\/looker\\/looker-db.yml --clustered -H $IP --shared-storage-dir \\/mnt\\/lookerfiles\\\"/' /home/looker/looker/looker\"",
-      "echo $CMD | bash",
-
-      # Create the database credentials file
-      "echo \"host: ${google_sql_database_instance.looker.ip_address.0.ip_address}\" | sudo tee -a /home/looker/looker/looker-db.yml",
-      "echo \"username: looker\" | sudo tee -a /home/looker/looker/looker-db.yml",
-      "echo \"password: ${random_id.database-password.hex}\" | sudo tee -a /home/looker/looker/looker-db.yml",
-      "echo \"database: looker\" | sudo tee -a /home/looker/looker/looker-db.yml",
-      "echo \"dialect: mysql\" | sudo tee -a /home/looker/looker/looker-db.yml",
-      "echo \"port: 3306\" | sudo tee -a /home/looker/looker/looker-db.yml",
-
-      # Mount the shared file system
-      "sudo mkdir -p /mnt/lookerfiles",
-      "sudo mount ${google_filestore_instance.looker.networks.0.ip_addresses.0}:/lookerfiles /mnt/lookerfiles",
-      "sudo chown looker:looker /mnt/lookerfiles",
-      "cat /proc/mounts | grep looker",
-
-      # Start Looker (but wait a while before starting additional nodes, because the first node needs to prepare the application database schema)
-      "sudo systemctl daemon-reload",
-      "sudo systemctl enable looker.service",
-      "if [ ${count.index} -eq 0 ]; then sudo systemctl start looker; else sleep 300 && sudo systemctl start looker; fi",
+      "chmod +x /tmp/${var.provisioning_script}",
+      "/bin/bash /tmp/${var.provisioning_script}",
     ]
   } 
 }

@@ -24,8 +24,8 @@ sudo yum install chromium-browser.x86_64 -y
 # We can fix this by creating a Bash script that aliases chromium-browser as chromium (which is what helltool expects), and also cleans up the output.
 cat <<EOT | sudo tee -a /usr/bin/chromium
 #!/bin/bash
-out=`/usr/bin/chromium-browser "$@"`
-echo $out | sed "s/a11y dbus service is already running! //"
+out=\`/usr/bin/chromium-browser "\$@"\`
+echo \$out | sed "s/a11y dbus service is already running! //"
 EOT
 # This three-line script removes the problematic message from the "chromium-browser --version" output so helltool doesn't get confused:
 sudo chmod +x /usr/bin/chromium

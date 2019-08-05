@@ -87,7 +87,7 @@ sudo service iptables stop
 sudo service iptables disable
 
 # Azure Storage does not support RHEL6 so we need to use NFS and put a share on the database server
-echo "lookerdb:/mnt/lookerfiles /mnt/lookerfiles" | sudo tee -a /etc/fstab
+echo "lookerdb:/mnt/lookerfiles /mnt/lookerfiles nfs" | sudo tee -a /etc/fstab
 sudo mount -a
 
 # Create a sysvinit script to start Looker automatically

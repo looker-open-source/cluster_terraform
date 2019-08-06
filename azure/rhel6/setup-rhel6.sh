@@ -117,4 +117,4 @@ EOT
 sudo chmod +x /etc/init.d/looker
 sudo chkconfig --add looker
 # Start Looker (but wait a while before starting additional nodes, because the first node needs to prepare the application database schema)
-if [ $NODE_COUNT -eq 0 ]; then sudo /etc/init.d/looker start; else sleep 300 && sudo /etc/init.d/looker start; fi
+if [ $NODE_COUNT -eq 0 ]; then sudo service looker start; else sleep 300 && sudo service looker start; fi

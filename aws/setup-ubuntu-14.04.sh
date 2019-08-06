@@ -55,8 +55,7 @@ sudo chown looker:looker looker
 
 # Determine the IP address of this instance so that it can be registered in the cluster
 export IP=$(ip addr | grep 'state UP' -A2 | tail -n1 | awk '{print $2}' | cut -f1  -d'/')
-export CMD="sudo sed -i 's/LOOKERARGS=\"\"/LOOKERARGS=\"--no-daemonize -d \/home\/looker\/looker\/looker-db.yml --clustered -H $IP --shared-storage-dir \/mnt\/lookerfiles\"/' /home/looker/looker/looker"
-echo $CMD | bash
+echo "LOOKERARGS=\"--no-daemonize -d /home/looker/looker/looker-db.yml --clustered -H $IP --shared-storage-dir /mnt/lookerfiles\"" >> /home/looker/looker/lookerstart.cfg
 
 # Create the database credentials file
 cat <<EOT | sudo tee -a /home/looker/looker/looker-db.yml

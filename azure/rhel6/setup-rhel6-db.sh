@@ -18,6 +18,7 @@ sudo service iptables disable
 
 # Create a share that the application servers will mount
 sudo /sbin/service nfs start
+sudo chkconfig --add nfs
 sudo mkdir -p /mnt/lookerfiles
 sudo chmod 777 /mnt/lookerfiles
 echo "/mnt *(rw,sync)" | sudo tee -a /etc/exports

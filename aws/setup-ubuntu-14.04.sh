@@ -44,9 +44,13 @@ if [[ "$eula" =~ .*EULA.* ]]; then echo "Error! This script was unable to downlo
 url=$(cat response.txt | jq -r '.url')
 sudo curl $url -o /home/looker/looker/looker.jar
 
-# The looker-dependencies.jar file will start being provided on 2019-09-01 for Looker 6.18
 url=$(cat response.txt | jq -r '.depUrl')
 sudo curl $url -o /home/looker/looker/looker-dependencies.jar
+
+# TODO: check SHA hash against the API response with shasum -a 256 looker-latest.jar
+
+# Looker won't automatically create the deploy_keys directory
+sudo mkdir /home/looker/looker/deploy_keys
 
 sudo chown looker:looker looker.jar looker-dependencies.jar
 sudo curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/looker -O

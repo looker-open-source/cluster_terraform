@@ -381,7 +381,7 @@ resource "azurerm_virtual_machine" "lookerdb" {
     type = "ssh"
     private_key = "${file("~/.ssh/id_rsa")}"
     timeout = "1m"
-    agent = true
+    agent = true // must be false on some platforms (Windows?)
   }
 
   provisioner "file" {

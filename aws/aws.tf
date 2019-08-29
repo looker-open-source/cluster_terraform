@@ -267,7 +267,7 @@ resource "aws_instance" "looker-instance" {
     user = "ubuntu"
     private_key = "${file("~/.ssh/id_rsa")}"
     timeout = "1m"
-    agent = true
+    agent = true // must be false on some platforms (Windows?)
   }
 
   provisioner "file" {

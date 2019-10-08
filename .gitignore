@@ -6,3 +6,4 @@ content
 local-variables
 .DS_Store
 *.code-workspace
+*.tfvars

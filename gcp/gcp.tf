@@ -11,6 +11,10 @@ provider random {
   version ="~> 2.0"
 }
 
+provider tls {
+  version = "~> 2.0"
+}
+
 resource "random_id" "id" {
   byte_length = 4
 }

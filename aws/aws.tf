@@ -6,7 +6,11 @@ provider "aws" {
 }
 
 provider random {
-  version ="~> 2.0"
+  version = "~> 2.0"
+}
+
+provider tls {
+  version = "~> 2.0"
 }
 
 # Create a virtual private cloud to contain all these resources
@@ -398,6 +402,7 @@ resource "random_string" "password" {
   min_numeric = 1
   min_special = 1
   min_upper = 1
+  override_special = "#%^&*()-="
 }
 
 output "Load_Balanced_Host" {

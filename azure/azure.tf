@@ -409,6 +409,7 @@ resource "random_string" "root_password" {
   min_numeric = 1
   min_special = 1
   min_upper = 1
+  override_special = "#%^&*()-="
 }
 resource "random_string" "looker_password" {
   length = 16
@@ -417,4 +418,5 @@ resource "random_string" "looker_password" {
   min_numeric = 1
   min_special = 1
   min_upper = 1
+  override_special = "#%^&*()-="
 }

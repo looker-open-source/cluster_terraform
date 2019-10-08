@@ -142,7 +142,7 @@ resource "aws_security_group" "ingress-all-looker" {
 # Choose an existing public/private key pair to use for authentication
 resource "aws_key_pair" "key" {
   key_name   = "key"
-  public_key = "${file("~/.ssh/id_rsa.pub")}" # this file must be an existing public key!
+  public_key = "${file("~/.ssh/${var.key}.pub")}" # this file must be an existing public key!
 }
 
 # Create a parameter group to specify recommended RDS settings for the Looker application database 
@@ -224,10 +224,11 @@ resource "aws_db_instance" "looker-app-db" {
   name                 = "looker"
   username             = "looker"
   password             = "${random_string.password.result}"
-  db_subnet_group_name   = "looker-subnet-group"
+  db_subnet_group_name   = "${aws_db_subnet_group.subnet-group-looker.name}"
   parameter_group_name = "${aws_db_parameter_group.looker_db_parameters.name}"
   vpc_security_group_ids = ["${aws_security_group.ingress-all-looker.id}"]
   backup_retention_period = 5
+  skip_final_snapshot = "${var.final_snapshot_skip}"
 }
 
 # Create a shared NFS file system and mount target
@@ -269,7 +270,7 @@ resource "aws_instance" "looker-instance" {
     host = "${element(aws_instance.looker-instance.*.public_dns, count.index)}"
     type = "ssh"
     user = "ubuntu"
-    private_key = "${file("~/.ssh/id_rsa")}"
+    private_key = "${file("~/.ssh/${var.key}")}"
     timeout = "1m"
     agent = true // must be false on some platforms (Windows?)
   }

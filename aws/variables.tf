@@ -40,3 +40,11 @@ variable "ami_id" {
 variable "provisioning_script" {
     default = "setup-ubuntu-18.04.sh" # The setup script must match the AMI above!
 }
+
+variable "key" {
+    default = "id_rsa"
+}
+
+variable "final_snapshot_skip" {
+    default = "false"
+}

@@ -224,7 +224,7 @@ resource "aws_db_instance" "looker-app-db" {
   parameter_group_name = "${aws_db_parameter_group.looker_db_parameters.name}"
   vpc_security_group_ids = ["${aws_security_group.ingress-all-looker.id}"]
   backup_retention_period = 5
-  skip_final_snapshot = ${var.final_snapshot_skip}
+  skip_final_snapshot = "${var.final_snapshot_skip}"
 }
 
 # Create a shared NFS file system and mount target

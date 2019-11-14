@@ -398,7 +398,7 @@ resource "aws_elb" "looker-elb" {
 # Generate a random database password
 resource "random_string" "password" {
   length = 16
-  special = true
+  special = false
   number = true
   min_numeric = 1
   min_special = 1

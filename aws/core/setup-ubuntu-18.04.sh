@@ -55,6 +55,7 @@ sudo curl $url -o /home/looker/looker/looker-dependencies.jar
 
 # Looker won't automatically create the deploy_keys directory
 sudo mkdir /home/looker/looker/deploy_keys
+sudo chown looker:looker /home/looker/looker/deploy_keys
 
 sudo chown looker:looker looker.jar looker-dependencies.jar
 sudo curl https://raw.githubusercontent.com/looker/customer-scripts/master/startup_scripts/looker -O

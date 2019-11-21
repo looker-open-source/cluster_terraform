@@ -1,18 +1,3 @@
-provider "aws" {
-  access_key = "${var.aws_access_key}"
-  secret_key = "${var.aws_secret_key}"
-  region     = "${var.aws_region}"
-  version = "~> 2.0"
-}
-
-provider random {
-  version = "~> 2.0"
-}
-
-provider tls {
-  version = "~> 2.0"
-}
-
 # Create a virtual private cloud to contain all these resources
 resource "aws_vpc" "looker-env" {
   cidr_block = "10.0.0.0/16"
@@ -42,13 +27,13 @@ resource "aws_subnet" "subnet-looker" {
 
 # Create a database subnet group to configure a high-availabilty RDS instance for the Looker application database server
 resource "aws_db_subnet_group" "subnet-group-looker" {
-  name        = "looker-subnet-group"
+  name = "looker-subnet-group-${var.environment}"
   subnet_ids  = "${aws_subnet.subnet-looker.*.id}"
 }
 
 # Create the inbound security rules
 resource "aws_security_group" "ingress-all-looker" {
-  name = "allow-all-sg"
+  name = "allow-all-sg-${var.environment}"
   vpc_id = "${aws_vpc.looker-env.id}"
 
   # Looker cluster communication
@@ -141,14 +126,14 @@ resource "aws_security_group" "ingress-all-looker" {
 
 # Choose an existing public/private key pair to use for authentication
 resource "aws_key_pair" "key" {
-  key_name   = "key"
+  key_name   = "key-${var.environment}"
   public_key = "${file("~/.ssh/${var.key}.pub")}" # this file must be an existing public key!
 }
 
 # Create a parameter group to specify recommended RDS settings for the Looker application database 
 resource "aws_db_parameter_group" "looker_db_parameters" {
 
-  name = "customer-internal-57-utf8mb4"
+  name = "customer-internal-57-utf8mb4-${var.environment}"
   family = "mysql5.7"
 
   parameter {
@@ -233,7 +218,7 @@ resource "aws_db_instance" "looker-app-db" {
 
 # Create a shared NFS file system and mount target
 resource "aws_efs_file_system" "looker-efs-fs" {
-  creation_token   = "looker-efs-token"
+  creation_token   = "looker-efs-token-${var.environment}"
   performance_mode = "generalPurpose"
   encrypted        = "true"
 }
@@ -276,7 +261,7 @@ resource "aws_instance" "looker-instance" {
   }
 
   provisioner "file" {
-    source      = "${var.provisioning_script}"
+    source      = "${var.provisioning_path}${var.provisioning_script}"
     destination = "/tmp/${var.provisioning_script}"
   }
   provisioner "remote-exec" {
@@ -348,7 +333,7 @@ resource "tls_self_signed_cert" "looker_cert" {
 
 # Register the key pair with AWS IAM
 resource "aws_iam_server_certificate" "looker_iam_cert" {
-  name_prefix      = "looker-cert"
+  name             = "looker-cert-${var.environment}"
   certificate_body = "${tls_self_signed_cert.looker_cert.cert_pem}"
   private_key      = "${tls_private_key.looker_private_key.private_key_pem}"
 
@@ -360,7 +345,7 @@ resource "aws_iam_server_certificate" "looker_iam_cert" {
 
 # Create a load balancer to route traffic to the instances
 resource "aws_elb" "looker-elb" {
-  name                        = "looker-elb"
+  name                        = "looker-elb-${var.environment}"
   subnets                     = ["${aws_subnet.subnet-looker.0.id}"]
   internal                    = "false"
   security_groups             = ["${aws_security_group.ingress-all-looker.id}"]
@@ -401,7 +386,6 @@ resource "random_string" "password" {
   special = false
   number = true
   min_numeric = 1
-  min_special = 1
   min_upper = 1
   override_special = "#%^&*()-="
 }

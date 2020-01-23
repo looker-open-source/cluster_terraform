@@ -44,3 +44,7 @@ variable "key" {
 variable "final_snapshot_skip" {
     default = "false"
 }
+
+variable "domain" {
+    default = "colinpistell.com"
+}

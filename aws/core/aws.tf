@@ -307,41 +307,32 @@ resource "aws_route_table_association" "subnet-association" {
 
 # Use an existing certificate if you have one, otherwise, generate a private/public key pair to use for the load balancer SSL
 
-# BEGIN GENERATE AND REGISTER KEY PAIR:
-resource "tls_private_key" "looker_private_key" {
-  algorithm   = "ECDSA"
-  ecdsa_curve = "P384"
+
+data "aws_route53_zone" "zone" {
+  name = "${var.domain}."
+  private_zone = false
 }
 
-resource "tls_self_signed_cert" "looker_cert" {
-  key_algorithm   = "ECDSA"
-  private_key_pem = "${tls_private_key.looker_private_key.private_key_pem}"
-
-  subject {
-    common_name  = "${aws_instance.looker-instance.0.public_dns}"
-    organization = "Looker Data Sciences Inc."
-  }
-
-  validity_period_hours = 8760
-
-  allowed_uses = [
-    "key_encipherment",
-    "digital_signature",
-    "server_auth",
-  ]
-}
-
-# Register the key pair with AWS IAM
-resource "aws_iam_server_certificate" "looker_iam_cert" {
-  name             = "looker-cert-${var.environment}"
-  certificate_body = "${tls_self_signed_cert.looker_cert.cert_pem}"
-  private_key      = "${tls_private_key.looker_private_key.private_key_pem}"
-
+resource "aws_acm_certificate" "cert" {
+  domain_name = "looker-${var.environment}.${var.domain}"
+  validation_method = "DNS"
   lifecycle {
     create_before_destroy = true
   }
 }
-# END GENERATE AND REGISTER KEY PAIR
+
+resource "aws_route53_record" "cert_validation" {
+  name = "${aws_acm_certificate.cert.domain_validation_options.0.resource_record_name}"
+  type = "${aws_acm_certificate.cert.domain_validation_options.0.resource_record_type}"
+  zone_id = "${data.aws_route53_zone.zone.zone_id}"
+  records = ["${aws_acm_certificate.cert.domain_validation_options.0.resource_record_value}"]
+  ttl = 60
+}
+
+resource "aws_acm_certificate_validation" "cert" {
+  certificate_arn = "${aws_acm_certificate.cert.arn}"
+  validation_record_fqdns = ["${aws_route53_record.cert_validation.fqdn}"]
+}
 
 # Create a load balancer to route traffic to the instances
 resource "aws_elb" "looker-elb" {
@@ -360,7 +351,7 @@ resource "aws_elb" "looker-elb" {
     instance_protocol  = "https"
     lb_port            = "443"
     lb_protocol        = "https"
-    ssl_certificate_id = "${aws_iam_server_certificate.looker_iam_cert.arn}"
+    ssl_certificate_id = "${aws_acm_certificate.cert.arn}"
   }
 
   listener {
@@ -368,7 +359,7 @@ resource "aws_elb" "looker-elb" {
     instance_protocol  = "https"
     lb_port            = "19999"
     lb_protocol        = "https"
-    ssl_certificate_id = "${aws_iam_server_certificate.looker_iam_cert.arn}"
+    ssl_certificate_id = "${aws_acm_certificate.cert.arn}"
   }
 
   health_check {
@@ -380,11 +371,24 @@ resource "aws_elb" "looker-elb" {
   }
 }
 
+resource "aws_route53_record" "looker-dns" {
+  zone_id = "${data.aws_route53_zone.zone.zone_id}"
+  name = "looker-${var.environment}.colinpistell.com"
+  type = "A"
+
+  alias {
+    name = "${aws_elb.looker-elb.dns_name}"
+    zone_id = "${aws_elb.looker-elb.zone_id}"
+    evaluate_target_health = false
+  }
+}
+
 # Generate a random database password
 resource "random_string" "password" {
   length = 16
-  special = false
+  special = true
   number = true
+  min_special = 1
   min_numeric = 1
   min_upper = 1
   override_special = "#%^&*()-="

@@ -34,7 +34,7 @@ module "prod_cluster" {
   technical_contact_email = "${var.technical_email}"
   key = "${var.ssh_key}"
   final_snapshot_skip = true
-  environment = "prod-calvin"
+  environment = "prod-levi"
 }
 
 output "prod_host" {

@@ -49,6 +49,7 @@ variable "instance_count" {
 }
 
 variable "provisioning_script" {
-    default = "../aws/setup-ubuntu-18.04.sh" # The setup script must match the AMI above!
-               # AWS and GCP setup scripts are equivalent
+    default = "" # The setup script must match the AMI!
+                 # AWS and GCP setup scripts are equivalent, use setup-ubuntu-18.04.sh
+                 # You must copy that script from the /aws folder to this /gcp folder
 }
